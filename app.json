@@ -1,25 +1,51 @@
 {
   "expo": {
-    "name": "obd-health-logger",
+    "name": "OBD Health Logger",
     "slug": "obd-health-logger",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.stanyan.obdhealthlogger",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Connects to your OBDLink CX adapter to read engine data.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.stanyan.obdhealthlogger",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [],
+          "bluetoothAlwaysPermission": "Connects to your OBDLink CX adapter to read engine data."
+        }
+      ],
+      "expo-sharing",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a4246541-fae5-44cf-8749-34a5760787e7"
+      }
+    },
+    "owner": "real_stanyan"
   }
 }

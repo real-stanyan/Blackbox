@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OBDLink CX quick probe (Web Bluetooth)</title>
+<style>
+  body { font-family: Menlo, monospace; background: #0d1117; color: #e6edf3; padding: 20px; }
+  button { font: inherit; padding: 8px 16px; margin-right: 8px; background: #238636; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+  button:disabled { background: #21262d; }
+  #log { margin-top: 16px; background: #010409; padding: 12px; border-radius: 8px; white-space: pre-wrap; font-size: 12px; color: #3fb950; min-height: 300px; }
+  .warn { color: #d29922; }
+</style>
+</head>
+<body>
+<h2>OBDLink CX quick probe</h2>
+<p class="warn">Chrome on macOS/Android only (Web Bluetooth). Caveat: this API can only open services
+listed below — if the CX uses an unlisted vendor service UUID, this page will connect but find no
+serial channel. The Expo app has no such limitation; this page is just the fastest smoke test.</p>
+<button id="connect">Connect &amp; probe</button>
+<button id="save" disabled>Save JSON</button>
+<div id="log"></div>
+<script>
+// Candidate serial-over-BLE service UUIDs seen across OBD adapters.
+const CANDIDATE_SERVICES = [
+  0xfff0, 0xffe0, 0xffb0, 0x18f0,
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART
+];
+const PIDS = [
+  ['010C', '410C', 'rpm', b => (b[0]*256+b[1])/4],
+  ['010D', '410D', 'speed km/h', b => b[0]],
+  ['0105', '4105', 'coolant °C', b => b[0]-40],
+  ['015C', '415C', 'oil °C', b => b[0]-40],
+  ['0106', '4106', 'STFT %', b => b[0]/1.28-100],
+  ['0107', '4107', 'LTFT %', b => b[0]/1.28-100],
+];
+const logEl = document.getElementById('log');
+const result = { startedAt: new Date().toISOString(), gatt: [], transcript: [], samples: [] };
+const log = (s) => { logEl.textContent += s + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+
+let writeChar = null, rxBuf = '', onChunk = null;
+
+async function request(cmd, timeoutMs = 8000) {
+  rxBuf = '';
+  const enc = new TextEncoder();
+  return new Promise(async (resolve, reject) => {
+    const timer = setTimeout(() => { onChunk = null; reject(new Error(`timeout: ${cmd} (got "${rxBuf.trim()}")`)); }, timeoutMs);
+    onChunk = () => {
+      if (rxBuf.includes('>')) {
+        clearTimeout(timer); onChunk = null;
+        const resp = rxBuf.slice(0, rxBuf.indexOf('>')).replace(/\r/g, ' ').trim();
+        result.transcript.push({ cmd, resp });
+        resolve(resp);
+      }
+    };
+    try { await writeChar.writeValue(enc.encode(cmd + '\r')); }
+    catch (e) { clearTimeout(timer); onChunk = null; reject(e); }
+  });
+}
+
+document.getElementById('connect').onclick = async () => {
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: CANDIDATE_SERVICES,
+    });
+    log(`device: ${device.name}`);
+    const server = await device.gatt.connect();
+    log('connected, enumerating candidate services...');
+    let notifyChar = null;
+    for (const svc of CANDIDATE_SERVICES) {
+      try {
+        const service = await server.getPrimaryService(svc);
+        const chars = await service.getCharacteristics();
+        for (const c of chars) {
+          const p = c.properties;
+          result.gatt.push({ service: service.uuid, char: c.uuid, notify: p.notify, write: p.write, writeNR: p.writeWithoutResponse });
+          log(`  ${service.uuid} / ${c.uuid} ${p.notify?'N':'-'}${p.write?'W':'-'}${p.writeWithoutResponse?'w':'-'}`);
+          if (p.notify && !notifyChar) notifyChar = c;
+          if ((p.write || p.writeWithoutResponse) && !writeChar) writeChar = c;
+        }
+      } catch (e) { /* service absent — expected for most candidates */ }
+    }
+    if (!notifyChar || !writeChar) { log('!! no serial channel in candidate list — use the Expo app for full discovery'); return; }
+    const dec = new TextDecoder();
+    await notifyChar.startNotifications();
+    notifyChar.addEventListener('characteristicvaluechanged', (e) => {
+      rxBuf += dec.decode(e.target.value);
+      onChunk && onChunk();
+    });
+    log(`serial channel OK — init...`);
+    log('ATZ -> ' + await request('ATZ', 12000));
+    for (const cmd of ['ATE0','ATL0','ATS0','ATH0','ATSP0']) log(cmd + ' -> ' + await request(cmd));
+    log('0100 -> ' + await request('0100', 15000));
+    for (const [req, prefix, name, decode] of PIDS) {
+      const resp = await request(req);
+      const hex = resp.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+      const i = hex.indexOf(prefix);
+      if (i === -1) { log(`${name}: unparseable "${resp}"`); continue; }
+      const bytes = hex.slice(i + 4).match(/../g).map(h => parseInt(h, 16));
+      const value = Math.round(decode(bytes) * 100) / 100;
+      result.samples.push({ name, value, raw: resp });
+      log(`${name}: ${value}`);
+    }
+    log('== DONE — save the JSON ==');
+    document.getElementById('save').disabled = false;
+  } catch (e) { log('!! ' + e.message); }
+};
+
+document.getElementById('save').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }));
+  a.download = `obd-probe-${Date.now()}.json`;
+  a.click();
+};
+</script>
+</body>
+</html>
