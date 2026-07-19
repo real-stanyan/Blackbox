@@ -28,7 +28,7 @@
 - Consumes: `BleTransport`(startScan/connect/disconnect/destroy)、`ElmSession`(init/queryPid)、`PIDS`
 - Produces: `LiveSessionProvider`、`useLiveSession(): { phase, values, elapsedSec, distanceKm, error, connect, disconnect }`、`type LivePhase`
 
-- [ ] **Step 1: 写 `src/ble/LiveSession.tsx`**
+- [x] **Step 1: 写 `src/ble/LiveSession.tsx`**
 
 ```tsx
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -243,7 +243,7 @@ export function useLiveSession(): LiveSessionValue {
 }
 ```
 
-- [ ] **Step 2: `App.tsx` 包 provider**
+- [x] **Step 2: `App.tsx` 包 provider**
 
 ```tsx
 import { RootNavigator } from './src/navigation/RootNavigator';
@@ -261,12 +261,12 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 3: 门禁**
+- [x] **Step 3: 门禁**
 
 Run: `npx tsc --noEmit`
 Expected: 无输出(绿)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/ble/LiveSession.tsx App.tsx
@@ -286,7 +286,7 @@ git commit -m "feat(B): LiveSessionProvider — BLE 连接状态机 + PID 轮询
 - Consumes: `useLiveSession()`(Task 1)
 - Produces: `useLivePids(): LivePid[]`(契约不变);`useHomeMode(): { mode: HomeMode }`(**删** `setMode`/`toggle` — 唯一外部用户是 Settings DEV toggle,同 task 删除)
 
-- [ ] **Step 1: `src/hooks/useLivePids.ts` 全量替换**
+- [x] **Step 1: `src/hooks/useLivePids.ts` 全量替换**
 
 ```ts
 import { useMemo } from 'react';
@@ -311,7 +311,7 @@ export function useLivePids(): LivePid[] {
 }
 ```
 
-- [ ] **Step 2: `src/hooks/useHomeMode.ts` 全量替换**
+- [x] **Step 2: `src/hooks/useHomeMode.ts` 全量替换**
 
 ```ts
 import { useLiveSession } from '../ble/LiveSession';
@@ -325,7 +325,7 @@ export function useHomeMode(): { mode: HomeMode } {
 }
 ```
 
-- [ ] **Step 3: `SettingsScreen.tsx` 删 DEV Group**
+- [x] **Step 3: `SettingsScreen.tsx` 删 DEV Group**
 
 删三处:
 
@@ -333,12 +333,12 @@ export function useHomeMode(): { mode: HomeMode } {
 2. `const { mode: homeMode, toggle: toggleHomeMode } = useHomeMode();`(第 14 行)
 3. 整个 `{__DEV__ ? (<Group header="开发选项(DEV)" ...>...</Group>) : null}` 块(第 47–58 行)
 
-- [ ] **Step 4: 门禁**
+- [x] **Step 4: 门禁**
 
 Run: `npx tsc --noEmit`
 Expected: 无输出(绿)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/hooks/useLivePids.ts src/hooks/useHomeMode.ts src/screens/SettingsScreen.tsx
@@ -365,7 +365,7 @@ git commit -m "feat(B): useLivePids/useHomeMode 换 BLE 底层,删 Settings DEV 
 6. 「手动连接」接 `connect()`,label 按 phase:idle`手动连接`/scanning`扫描中…`/connecting`连接中…`/error`连接失败 · 点按重试`;scanning/connecting 禁点。**顺带修 A 的 bug:裸字符串子节点包进 `<Text>`**(RN 要求,真机会 throw)
 7. error phase 在 hint 区显示错误信息
 
-- [ ] **Step 1: `HomeScreen.tsx` 全量替换**
+- [x] **Step 1: `HomeScreen.tsx` 全量替换**
 
 ```tsx
 import { View, Text, Pressable } from 'react-native';
@@ -499,12 +499,12 @@ export function HomeScreen() {
 }
 ```
 
-- [ ] **Step 2: 门禁**
+- [x] **Step 2: 门禁**
 
 Run: `npx tsc --noEmit`
 Expected: 无输出(绿)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/screens/HomeScreen.tsx
@@ -515,9 +515,9 @@ git commit -m "feat(B): HomeScreen 直读 BLE 真值,手动连接接 LiveSession
 
 ### Task 4: PR(标注未经真机验证)
 
-- [ ] **Step 1: 全量门禁复跑** `npx tsc --noEmit` → 绿
-- [ ] **Step 2: push + 开 PR**,body 必含:
+- [x] **Step 1: 全量门禁复跑** `npx tsc --noEmit` → 绿
+- [x] **Step 2: push + 开 PR**,body 必含:
   - `Closes #9` 引用
   - **「未经真机验证」标注**(AGENTS.md Hard rule)
   - 真机验证清单(spec §5):① scan→connect→streaming 全流程 ② tile 真值每轮更新 ③ 时长/里程走表 ④ 拔适配器落 error 可重试 ⑤ Settings 无 DEV toggle
-- [ ] **Step 3: CI 绿后按 ADR-0007 merge commit 合并**(作者 agent 自 merge;纯代码改动,非 L1)
+- [x] **Step 3: CI 绿后按 ADR-0007 merge commit 合并**(作者 agent 自 merge;纯代码改动,非 L1)
