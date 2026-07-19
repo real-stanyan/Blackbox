@@ -202,7 +202,7 @@ export default function App() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <Text style={styles.title}>OBD Health Logger</Text>
+      <Text style={styles.title}>Blackbox</Text>
       <Text style={styles.phase}>state: {phase} · samples: {sampleCount}</Text>
 
       <View style={styles.liveRow}>

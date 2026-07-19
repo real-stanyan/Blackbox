@@ -1,4 +1,6 @@
-# OBD Health Logger
+# Blackbox
+
+> formerly "OBD Health Logger"
 
 Personal tool: auto-log BMW engine data from an OBDLink CX (BLE) and, later, run each trip
 through an LLM for engine-health analysis. This repo is currently the **V0 validation build** —
