@@ -1,6 +1,8 @@
-import { Text } from 'react-native';
+import { RootNavigator } from './src/navigation/RootNavigator';
 
-// 临时占位——RootNavigator 在 Task 11 写、Task 13 接入。在此之前 app 启动会显示这一行。
+// 消费者版 App(sub-project A)。
+// 原 V0 调试 UI 备份在 App.debug.tsx(BLE 开发期看日志用)。
+// V0 → 消费者版方向见 Protocol gap issue #6。
 export default function App() {
-  return <Text>sub-project A 进行中…</Text>;
+  return <RootNavigator />;
 }
