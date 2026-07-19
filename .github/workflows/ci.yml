@@ -1,0 +1,20 @@
+name: gate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # IMPORTANT: keep this identical to the Gate section in AGENTS.md.
+      # That sameness is the contract that lets CI enforce what agents promise.
+      - run: npx tsc --noEmit

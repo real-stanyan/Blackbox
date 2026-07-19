@@ -1,3 +1,120 @@
-# Expo HAS CHANGED
+# OBD Health Logger (Blackbox)
 
-Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before writing any code.
+个人工具：用 OBDLink CX（BLE）自动记录 BMW 发动机数据，后续接 LLM 做引擎健康分析。当前是 **V0 验证版**——只证明最险的一环：从自己的代码经 BLE 跟 OBDLink CX 通话。范围与验收标准见 `README.md`。
+
+> This file is the single source of truth for ALL coding agents (Claude Code, Z Code, etc.).
+> Rules live here and only here. Do not duplicate them elsewhere.
+
+## Tech stack
+
+- Expo ~57（dev client；Expo Go 跑不了 BLE，必须真机 + `expo run:ios/android --device`）
+- React Native 0.86 / React 19.2 / TypeScript ~6.0
+- react-native-ble-plx（BLE）
+- 无后端、无数据库；session 数据走 share sheet 导出 JSON
+
+## Hard rules
+
+- **Expo HAS CHANGED**：任何 Expo API 用法以 https://docs.expo.dev/versions/v57.0.0/ 为准，写代码前先查 versioned docs——训练记忆里的 Expo API 已过时
+- BLE 写入必须分块（OBDLink CX 超 BLE MTU 的写会失败），不许单发长命令
+- CX 的 GATT UUID 是 undocumented：运行时发现（notify+write pair），不许硬编码
+- BLE 相关改动不能只靠类型检查/模拟器宣布完成——真机 + 真适配器验证，或在 PR/issue 里明确标注「未经真机验证」
+
+## Working agreement (multi-agent)
+
+### On starting a shift（开工三件事）
+
+1. `git log --oneline -10` — 看最近发生了什么
+2. 查 GitHub Issues — **先找 open 的交接 issue**（上一棒的 Memory 在里面；读完关闭它 = 接手，见 ADR-0005。找不到 → 查最近关闭的 issue 有无「无下一棒」终局声明：有 = 合规终局收工（ADR-0009），正常开工；无 = 上一棒违规收工，开 Protocol gap issue 记录——两种情况都从 git log + open issues 重建上下文），然后看其他 open 任务和备注
+3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
+
+### While working
+
+- 小步 commit，message 写清 **why**，不只是 what
+- 一个任务从头到尾一个 agent 做完；交接只发生在任务边界（issue 关闭 / PR 合并），不在任务中间
+- 非 trivial 改动走分支 + PR；typo 级小改可直接进 main
+- 架构性决策写 `docs/adr/`（一个决策一个文件）
+- 业务术语的定义查 `CONTEXT.md`；新术语出现时补进去
+
+### Issue & PR 的角色
+
+Issues 和 PR 是 agent 之间（以及 agent ↔ 人之间）带时间戳、append-only、不腐烂的会话载体。在本协议里有**三个不重叠的角色**——每个 issue/PR 都该能归入其中一类：
+
+| 角色 | 什么时候用 | 什么时候关 |
+|---|---|---|
+| **Task**（任务） | 要做一件可执行的事 | 任务做完且门禁绿 |
+| **Memory**（交接记忆） | 收工时在**交接 issue**（见 On ending a shift）留 comment，五项格式 | 下一棒读完并关闭交接 issue = 接手完成 |
+| **Protocol gap**（协议缺口） | 撞上 repo 回答不了的问题（规则没写、歧义、边界模糊） | 缺口被补进 AGENTS.md / CONTEXT.md / ADR |
+
+硬规则：
+
+- **撞上 repo 回答不了的问题，必须开 issue（Protocol gap 类），不许 silent 判断。** 这是协议自我修复的唯一入口——缺口从"靠默契"变成"显性、可讨论、可关闭"。
+- **Memory 类 comment 的最小格式**（ADR-0004）：① 做到哪 ② 卡在哪 ③ 下一步是什么 ④ 任务完成则关 issue ⑤ **判断依据 / 权衡**——本棒做了非既定决策时必填（选了什么、为什么、什么前提失效时该推翻）；没做决策就写「无」，不许省略。少一项都不算合格交接。
+- **交接 = issue 关闭 / PR 合并的那一刻**，不是"我觉得讲清楚了"。没关 issue 就换人 = 任务中途换手，违反上一节。
+- **PR 是 Task 的实施载体，不是独立角色**：PR 引用它实现的 Task issue，merge 时关 issue。PR review 中发现的新问题另开 issue，不在 PR 评论里堆。
+
+> 为什么用 issue comment 而不是独立交接文件：理由见 `docs/adr/0003-issue-roles.md`。为什么 Memory 留在 open 交接 issue 而不是关闭的 Task issue：见 `docs/adr/0005-handoff-lives-in-an-open-issue.md`。
+
+### PR 处置（merge 规则）
+
+四条规则（ADR-0007）：
+
+- **merge 方式一律 merge commit**，不 squash、不 rebase：小步 commit 的 why 是协议资产（repo 是会话之间唯一的共享记忆），squash 等于删记忆；风格定死一种，历史才可预测。
+- **谁 merge**：PR 作者 agent 在 CI 绿后自行 merge。协议改动按分级走（见「协议自身的变更」）：L1 等 stanyan 同意，L2 自主。
+- **review 不强制第二 agent**：轮班制下常态只有一棒在场，强制互审会阻塞在交接边界上。质量兜底 = CI 门禁 + stanyan 事后否决权（revert + 重开 issue）。
+- **不接手别人的 open PR**——那是任务中途换手（见 While working）。例外：交接 issue 明确移交，或 stanyan 指示。
+
+收工时 PR 还挂着 = 任务没做完：按 On ending a shift 第 3 条把进度写进 Task issue comment，PR 留 open。
+
+### 协议自身的变更（改本文件的规则）
+
+agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
+
+| 层级 | 内容 | 流程 |
+|---|---|---|
+| **L1 严格层** | Hard rules / Gate 命令 / Tech stack / 本节自身 | issue + ADR + PR,**且必须 stanyan 在会话或 PR comment 中明确同意后 agent 才能 merge** |
+| **L2 自治层** | Working agreement(除 Gate)/ 索引(Where to find things) | issue + ADR + PR,agent 可自主 merge |
+
+「Gate 命令」的边界(ADR-0010):命令行本身与**放松/删除/改写门禁现有断言** = L1;**新增收紧断言** = L2,随所属 PR 走。纯重构(行为不变)算 L2,举证责任在改的 agent。
+
+通用规则(两层都适用):
+
+- **三件套缺一不可**:对应 issue(通常是 Protocol gap 类)+ ADR(记录决策与理由)+ 分支 PR(CI 绿才能 merge,merge 时关 issue)。
+- **没有 issue + ADR 的协议改动是违规的**,应当 revert,无论属于哪一层。
+- **协议变更比代码改动更重**:代码只在架构性决策时才要 ADR,协议变更一律要。
+- **人保留事后否决权**:revert 对应 PR + 重开 issue,即撤销该变更——即便当时没拦住。
+
+**L1/L2 边界判据**(ADR-0012,**机制引用优先**):新增内容只要**引用了 L1/L2 分级 / Hard rules / Working agreement 的机制**(无论是否"可选"、是否动现有文件),按 **L1** 处理。客观判据——文本中出现 `L1` / `L2` / `Hard rule` / `Working agreement` / `分级授权` 等机制关键词,或语义上依赖这些机制运转。
+
+L1 的"明确同意"是 b-弱形态:stanyan 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 stanyan 成为 L1 瓶颈,这个代价接受。
+
+> 本 repo 无下游项目,scaffold 的下游回流机制(ADR-0013)在此只作接收端:scaffold 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。
+
+### Gate（门禁 — 收工前必须全绿）
+
+```bash
+npx tsc --noEmit
+```
+
+> V0 无测试套件,类型检查是当前唯一可自动化的断言(理由与升级路径见 ADR-0014)。BLE 行为的验收靠真机 + 真适配器(见 README「Success criteria」与 Hard rules 最后一条),CI 断言不了。
+
+CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
+
+### On ending a shift（收工规矩）
+
+1. 门禁全绿
+2. commit + push
+3. 做完的 Task issue 照常关闭；做到一半的,进度写到该 issue 的 comment
+4. **开下一棒的交接 issue**（Task 类,保持 open,ADR-0005）:body 写现状与下一步建议,本轮 Memory comment（五项格式,ADR-0004）留在这里。**这是下一棒唯一保证撞见的入口**——Memory 不再埋进随手关闭的 Task issue。**唯一例外——终局收工**（ADR-0009）:归档 / 确认无下一棒时可不开,但必须在最后关闭的 issue 里 comment 显式声明「无下一棒」+ 理由,沉默的终局不算终局
+
+### Division of labor
+
+不预设分工（ADR-0008 默认规则）：**Task issue 认领制**——谁认领谁从头做到尾（见 While working），任务不按 agent 特长路由。
+
+## Where to find things
+
+- `README.md` — V0 范围、运行方式、验收标准、已知风险
+- `CONTEXT.md` — 领域词汇表（OBD/BLE 术语）
+- `docs/adr/` — 架构决策记录（0001–0013 随 scaffold 引入,0014 起为本项目自有）
+- `src/ble/` — BLE 扫描/连接/GATT 发现/串行通道
+- `src/obd/` — ELM327/STN 初始化与 Mode 01 PID 轮询
+- `src/analysis/` — 数据分析（`scripts/test-analysis.ts` 可离线跑）
