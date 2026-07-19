@@ -168,11 +168,18 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
           picked = true;
           cleanupScan();
           void (async () => {
+            // disconnect() 可能在扫描/连接中途把状态拉回 idle — 每个 await 后核对再推进
+            if (phaseRef.current !== 'scanning') return;
             try {
               setPhase('connecting');
               await transport.connect(device);
               const session = new ElmSession(transport, (line) => console.log(`[obd] ${line}`));
               await session.init();
+              // as LivePhase:TS 看不见 setPhase 对 ref 的 mutation,会把窄化保持在 'scanning'
+              if ((phaseRef.current as LivePhase) !== 'connecting') {
+                await transport.disconnect().catch(() => {});
+                return;
+              }
               setPhase('streaming');
               startPolling(session);
             } catch (e: any) {
@@ -192,6 +199,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       stopStreaming();
       transportRef.current?.disconnect().catch(() => {});
       transportRef.current?.destroy();
+      transportRef.current = null; // destroyed BleManager 不可复用,重挂载时懒建新实例
     },
     [],
   );
