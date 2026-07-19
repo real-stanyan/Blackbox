@@ -5,13 +5,11 @@ import { Row } from '../components/Row';
 import { Toggle } from '../components/Toggle';
 import { useTheme } from '../context/Theme';
 import { useVehicle } from '../hooks/useVehicle';
-import { useHomeMode } from '../hooks/useHomeMode';
 
 // Settings — 设置。对照 prototype/screensB.jsx SettingsScreen。
 export function SettingsScreen() {
   const t = useTheme();
   const D = useVehicle();
-  const { mode: homeMode, toggle: toggleHomeMode } = useHomeMode();
   const [autoConn, setAuto] = useState(true);
   const [chime, setChime] = useState(true);
   const [nConn, setNConn] = useState(true);
@@ -44,18 +42,6 @@ export function SettingsScreen() {
         <Row title="导出全部行程数据" valueColor={t.blue} accessory="chevron" onClick={() => {}} />
         <Row title="清除本地数据" valueColor={t.red} accessory={null} onClick={() => {}} last />
       </Group>
-      {__DEV__ ? (
-        <Group header="开发选项(DEV)" footer="A 阶段:切换 Home 的 idle/driving 模式。B 接入真 BLE 后此 toggle 移除。">
-          <Row
-            icon="gauge"
-            iconBg={t.label2}
-            title="Home 模式"
-            sub={homeMode === 'driving' ? '行驶中' : '未连接'}
-            right={<Toggle on={homeMode === 'driving'} onChange={toggleHomeMode} />}
-            last
-          />
-        </Group>
-      ) : null}
       <Group footer="OBD 健康记录 · 个人工具,数据仅存本机。">
         <Row title="版本" value="1.0.0 (V1)" accessory={null} last />
       </Group>
