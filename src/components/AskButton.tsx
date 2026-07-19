@@ -1,4 +1,4 @@
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMemo } from 'react';
 import { Icon } from './Icon';
