@@ -1,14 +1,9 @@
-// A 阶段:dev override。Settings 底部 __DEV__ toggle 切 idle/driving。
-// B 阶段接入真 BLE 后,这里换成「BLE 连接状态」的 derived 值。
-import { useState, useCallback } from 'react';
+import { useLiveSession } from '../ble/LiveSession';
 
 export type HomeMode = 'idle' | 'driving';
 
-export function useHomeMode() {
-  // A 阶段默认 driving(展示有数据的样子)
-  const [mode, setMode] = useState<HomeMode>('driving');
-  const toggle = useCallback(() => {
-    setMode((m) => (m === 'driving' ? 'idle' : 'driving'));
-  }, []);
-  return { mode, setMode, toggle };
+// B 阶段:BLE 连接状态的派生值(streaming = driving)。A 阶段 dev toggle 已删。
+export function useHomeMode(): { mode: HomeMode } {
+  const { phase } = useLiveSession();
+  return { mode: phase === 'streaming' ? 'driving' : 'idle' };
 }
