@@ -120,7 +120,7 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 - `README.md` — V0 范围、运行方式、验收标准、已知风险
 - `CONTEXT.md` — 领域词汇表（OBD/BLE 术语）
-- `docs/adr/` — 架构决策记录（0001–0013 随 Gearbox(原名 scaffold)引入,0014 为本项目自有,0015–0021 为上游回流拷贝）
+- `docs/adr/` — 架构决策记录（0001–0013 随 Gearbox(原名 scaffold)引入,0014 为本项目自有,0015–0024 为上游回流拷贝）
 - `src/ble/` — BLE 扫描/连接/GATT 发现/串行通道
 - `src/obd/` — ELM327/STN 初始化与 Mode 01 PID 轮询
 - `src/analysis/` — 数据分析（`scripts/test-analysis.ts` 可离线跑）
