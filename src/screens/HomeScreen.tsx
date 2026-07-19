@@ -1,5 +1,5 @@
 import { View, Text, Pressable } from 'react-native';
-import { useEffect, useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
@@ -9,42 +9,22 @@ import { useTheme } from '../context/Theme';
 import { useLivePids } from '../hooks/useLivePids';
 import { useVehicle } from '../hooks/useVehicle';
 import { useHomeMode } from '../hooks/useHomeMode';
+import { useLiveSession } from '../ble/LiveSession';
 
 // Home — 实时。对照 prototype/screensA.jsx HomeScreen。
+// B 阶段起数据来自真 BLE(LiveSession),不再有 mock jitter 模拟。
 export function HomeScreen() {
   const t = useTheme();
   const pids = useLivePids();
   const vehicle = useVehicle();
   const { mode } = useHomeMode();
+  const { phase, elapsedSec, distanceKm, error, connect } = useLiveSession();
   const driving = mode === 'driving';
-  const [live, setLive] = useState<Record<string, number>>({});
-  const [secs, setSecs] = useState(driving ? 754 : 0);
 
-  useEffect(() => {
-    if (!driving) {
-      setLive({});
-      return;
-    }
-    const roll = () => {
-      const next: Record<string, number> = {};
-      for (const p of pids) {
-        if (p.drive == null) continue;
-        const jittered = p.drive + (Math.random() - 0.5) * 2 * p.jitter;
-        const isInt = p.key === 'rpm' || p.key === 'speed';
-        next[p.key] = isInt ? Math.round(jittered) : Math.round(jittered * 100) / 100;
-      }
-      setLive(next);
-    };
-    roll();
-    const iv = setInterval(roll, 900);
-    const tv = setInterval(() => setSecs((s) => s + 1), 1000);
-    return () => {
-      clearInterval(iv);
-      clearInterval(tv);
-    };
-  }, [driving, pids]);
-
-  const mmss = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+  const mmss = `${String(Math.floor(elapsedSec / 60)).padStart(2, '0')}:${String(elapsedSec % 60).padStart(2, '0')}`;
+  const connLabel =
+    phase === 'scanning' ? '扫描中…' : phase === 'connecting' ? '连接中…' : phase === 'error' ? '连接失败 · 点按重试' : '手动连接';
+  const connBusy = phase === 'scanning' || phase === 'connecting';
 
   const s = useMemo(
     () => ({
@@ -64,14 +44,12 @@ export function HomeScreen() {
         color: t.label, fontSize: 22, fontWeight: '600' as const,
         fontVariant: ['tabular-nums' as const], marginTop: 2,
       },
-      manualConn: {
-        paddingVertical: 13, paddingHorizontal: 16,
-        borderTopWidth: 0.5, borderTopColor: t.sep,
-        color: t.orange, fontSize: 16, fontWeight: '500' as const, textAlign: 'center' as const,
-      },
+      manualConnWrap: { paddingVertical: 13, paddingHorizontal: 16, borderTopWidth: 0.5, borderTopColor: t.sep },
+      manualConnText: { color: t.orange, fontSize: 16, fontWeight: '500' as const, textAlign: 'center' as const },
       sectionLabel: { color: t.label2, fontSize: 13, paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8 },
       tilesWrap: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 10, paddingHorizontal: 16, paddingBottom: 8 },
       idleHint: { color: t.label3, fontSize: 13, textAlign: 'center' as const, paddingHorizontal: 40, paddingTop: 10, lineHeight: 18 },
+      errorHint: { color: t.red, fontSize: 13, textAlign: 'center' as const, paddingHorizontal: 40, paddingTop: 10, lineHeight: 18 },
     }),
     [t, driving],
   );
@@ -105,28 +83,29 @@ export function HomeScreen() {
             </View>
             <View style={[s.heroCell, s.heroCellRight]}>
               <Text style={s.heroCellLabel}>里程</Text>
-              <Text style={s.heroCellValue}>8.6 km</Text>
+              <Text style={s.heroCellValue}>{distanceKm.toFixed(1)} km</Text>
             </View>
           </View>
         ) : (
-          <Pressable onPress={() => {}} style={({ pressed }) => [s.manualConn, pressed && { opacity: 0.6 }]}>
-            手动连接
+          <Pressable
+            onPress={connect}
+            disabled={connBusy}
+            style={({ pressed }) => [s.manualConnWrap, (pressed || connBusy) && { opacity: 0.6 }]}
+          >
+            <Text style={s.manualConnText}>{connLabel}</Text>
           </Pressable>
         )}
       </Card>
 
-      <Text style={s.sectionLabel}>{driving ? '实时数据 · 每秒更新' : '连接后显示实时数据'}</Text>
+      <Text style={s.sectionLabel}>{driving ? '实时数据 · 持续更新' : '连接后显示实时数据'}</Text>
       <View style={s.tilesWrap}>
         {pids.map((p) => {
-          const v: string | number = driving && live[p.key] != null
-            ? live[p.key]
-            : (driving && p.drive != null ? p.drive : '—');
-          const col = p.key === 'coolant'
-            ? t.blue
-            : (p.key === 'ltft' && driving ? t.amber : t.label);
-          const note = p.key === 'oil'
-            ? p.note
-            : (driving && p.key === 'ltft' ? '略偏高' : undefined);
+          const has = driving && p.drive != null;
+          const isInt = p.key === 'rpm' || p.key === 'speed';
+          const v: string | number = has ? (isInt ? Math.round(p.drive!) : p.drive!) : '—';
+          const ltftHigh = has && p.key === 'ltft' && Math.abs(p.drive!) >= 5;
+          const col = p.key === 'coolant' ? t.blue : ltftHigh ? t.amber : t.label;
+          const note = p.key === 'oil' && !has ? p.note : ltftHigh ? '略偏高' : undefined;
           return (
             <StatTile
               key={p.key}
@@ -139,7 +118,8 @@ export function HomeScreen() {
           );
         })}
       </View>
-      {!driving ? (
+      {phase === 'error' && error ? <Text style={s.errorHint}>{error}</Text> : null}
+      {!driving && phase !== 'error' ? (
         <Text style={s.idleHint}>
           连接成功与断开时都会推送通知并响铃,你无需一直盯着这个页面。
         </Text>
