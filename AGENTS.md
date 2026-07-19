@@ -19,6 +19,8 @@
 - CX 的 GATT UUID 是 undocumented：运行时发现（notify+write pair），不许硬编码
 - BLE 相关改动不能只靠类型检查/模拟器宣布完成——真机 + 真适配器验证，或在 PR/issue 里明确标注「未经真机验证」
 
+> 协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节的硬规则)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0019)。
+
 ## Working agreement (multi-agent)
 
 ### On starting a shift（开工三件事）
@@ -76,6 +78,8 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 
 「Gate 命令」的边界(ADR-0010):命令行本身与**放松/删除/改写门禁现有断言** = L1;**新增收紧断言** = L2,随所属 PR 走。纯重构(行为不变)算 L2,举证责任在改的 agent。
 
+**测试型门禁**(本项目 Gate 即此类:tsc,后续可能加 vitest/lint,ADR-0021):配置层直接套上行(收紧配置 L2 / 放松配置 L1 / 命令行 L1);测试内容层按**动机**定级——测试跟随产品代码变更同 PR 增删改 = L2 常规开发;**为绿而删**(删 / `.skip` / 弱化测试而 diff 无对应产品变更)= L1,沉默的 skip = 违规。删/skip 测试必须在 commit message 或 PR body 写明动机。
+
 通用规则(两层都适用):
 
 - **三件套缺一不可**:对应 issue(通常是 Protocol gap 类)+ ADR(记录决策与理由)+ 分支 PR(CI 绿才能 merge,merge 时关 issue)。
@@ -85,9 +89,11 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 
 **L1/L2 边界判据**(ADR-0012,**机制引用优先**):新增内容只要**引用了 L1/L2 分级 / Hard rules / Working agreement 的机制**(无论是否"可选"、是否动现有文件),按 **L1** 处理。客观判据——文本中出现 `L1` / `L2` / `Hard rule` / `Working agreement` / `分级授权` 等机制关键词,或语义上依赖这些机制运转。
 
+**定义豁免**(ADR-0020):CONTEXT.md 词条**定义**既有机制,三要件缺一不可——仅改 CONTEXT.md、词条注明出处 ADR、不新增义务/不改流程边界——满足则 L2 自主。任一不满足或拿不准 → 按 L1,不许自行豁免;借定义之名改语义 = 违规,revert + 重开 issue。
+
 L1 的"明确同意"是 b-弱形态:stanyan 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 stanyan 成为 L1 瓶颈,这个代价接受。
 
-> 本 repo 无下游项目,scaffold 的下游回流机制(ADR-0013)在此只作接收端:scaffold 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。
+> 本 repo 无下游项目,Gearbox(原名 scaffold,ADR-0016)的下游回流机制(ADR-0013)在此只作接收端:Gearbox 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。
 
 ### Gate（门禁 — 收工前必须全绿）
 
@@ -114,7 +120,7 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 - `README.md` — V0 范围、运行方式、验收标准、已知风险
 - `CONTEXT.md` — 领域词汇表（OBD/BLE 术语）
-- `docs/adr/` — 架构决策记录（0001–0013 随 scaffold 引入,0014 起为本项目自有）
+- `docs/adr/` — 架构决策记录（0001–0013 随 Gearbox(原名 scaffold)引入,0014 为本项目自有,0015–0021 为上游回流拷贝）
 - `src/ble/` — BLE 扫描/连接/GATT 发现/串行通道
 - `src/obd/` — ELM327/STN 初始化与 Mode 01 PID 轮询
 - `src/analysis/` — 数据分析（`scripts/test-analysis.ts` 可离线跑）

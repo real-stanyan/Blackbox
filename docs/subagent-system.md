@@ -248,15 +248,15 @@ Your final message lists:
 - 单文件小改主 agent 直接做
 ```
 
-### 5.3 工具/基础设施项目（如 agents-md-scaffold 本身）
+### 5.3 工具/基础设施项目（如 gearbox 本身）
 
 ```markdown
 ## Subagent routing（本项目专属）
 
-本项目是 scaffold，改动会影响所有下游 repo。Subagent 派发时：
+本项目是 Gearbox(原名 scaffold)，改动会影响所有下游 repo。Subagent 派发时：
 
 - **任何非 trivial 改动都走 SDD**（Implementer + Reviewer）——下游影响大，宁可慢
-- **改 AGENTS.md / Gate / check-scaffold.js**：Implementer 的 brief 必须说明"这是协议改动，需 ADR + Stan 同意（L1）或自主 merge（L2）"
+- **改 AGENTS.md / Gate / check-gearbox.js**：Implementer 的 brief 必须说明"这是协议改动，需 ADR + Stan 同意（L1）或自主 merge（L2）"
 - **新增模板文档**（如 docs/subagent-system.md）：按 L2 自主 merge
 ```
 
