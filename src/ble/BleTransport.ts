@@ -129,9 +129,12 @@ export class BleTransport {
     }
 
     let adopted = false;
-    for (const { n, w } of pairs) {
+    for (const [i, { n, w }] of pairs.entries()) {
       this.log(`Probing ${n.serviceUUID.slice(4, 8)}: notify=${n.uuid.slice(4, 8)} write=${w.uuid.slice(4, 8)}...`);
-      if (await this.probePair(n, w)) {
+      // CX data channel is encrypted: first-ever access triggers the iOS pairing
+      // dialog, which the user may take several seconds to accept. Give the top
+      // candidate a window generous enough to cover that.
+      if (await this.probePair(n, w, i === 0 ? 12000 : 4000)) {
         this.gattDump.chosenNotify = { service: n.serviceUUID, char: n.uuid };
         this.gattDump.chosenWrite = { service: w.serviceUUID, char: w.uuid, withResponse: w.isWritableWithResponse };
         this.log(`Serial channel confirmed: ${n.uuid.slice(4, 8)}/${w.uuid.slice(4, 8)}`);
@@ -140,12 +143,16 @@ export class BleTransport {
       }
     }
     if (!adopted) {
-      throw new Error('No candidate pair answered ATZ — export the GATT dump and send it over.');
+      throw new Error(
+        'No candidate pair answered ATZ. The CX only accepts new bonds for 5 minutes after ' +
+          'power-on: unplug/replug the adapter, reconnect, and accept the iOS pairing dialog ' +
+          '(PIN 123456 if asked). If no dialog ever appeared, export the GATT dump and send it over.'
+      );
     }
   }
 
   /** Subscribe to a candidate pair, fire ATZ, adopt the pair if anything comes back. */
-  private async probePair(n: GattCharInfo, w: GattCharInfo): Promise<boolean> {
+  private async probePair(n: GattCharInfo, w: GattCharInfo, timeoutMs = 4000): Promise<boolean> {
     if (!this.device) return false;
     this.notifySub?.remove();
     this.rxBuffer = '';
@@ -155,7 +162,12 @@ export class BleTransport {
     try {
       this.notifySub = this.device.monitorCharacteristicForService(n.serviceUUID, n.uuid, (error, characteristic) => {
         if (error) {
-          if (!error.message.includes('cancelled')) this.log(`!! notify error: ${error.message}`);
+          if (!error.message.includes('cancelled')) {
+            this.log(`!! notify error: ${error.message}`);
+            if (/encrypt|authenticat|pair|bond/i.test(error.message)) {
+              this.log('>> CX needs BLE pairing. Power-cycle it (bonds only in first 5 min), reconnect, accept the iOS dialog.');
+            }
+          }
           return;
         }
         if (characteristic?.value) {
@@ -172,7 +184,7 @@ export class BleTransport {
         const timer = setTimeout(() => {
           this.onChunk = null;
           resolve(false);
-        }, 4000);
+        }, timeoutMs);
         this.onChunk = (buffered) => {
           if (buffered.length > 0) {
             clearTimeout(timer);
@@ -181,10 +193,19 @@ export class BleTransport {
           }
         };
         const fire = () =>
-          this.write('ATZ\r').catch(() => {
-            clearTimeout(timer);
-            this.onChunk = null;
-            resolve(false);
+          this.write('ATZ\r').catch((e: any) => {
+            this.log(`  !! ATZ write failed: ${e.message}`);
+            if (/encrypt|authenticat|pair|bond/i.test(e.message)) {
+              // iOS pairing dialog is likely on screen — keep the probe window
+              // open and retry after the user has had a moment to accept it.
+              setTimeout(() => {
+                if (this.onChunk) fire();
+              }, 2000);
+            } else {
+              clearTimeout(timer);
+              this.onChunk = null;
+              resolve(false);
+            }
           });
         fire();
         // A cold CX frequently swallows the first ATZ; nudge once more mid-window
@@ -194,6 +215,7 @@ export class BleTransport {
         }, 1500);
       });
       if (!got) {
+        this.log('  no answer — next candidate');
         this.notifySub?.remove();
         this.notifySub = null;
       }
