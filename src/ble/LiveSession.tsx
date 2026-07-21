@@ -19,6 +19,8 @@ const OBD_TO_UI: Record<string, string> = {
 
 const ADAPTER_NAME = /OBD|CX|LINK|STN|VLINK/i;
 const SCAN_TIMEOUT_MS = 30_000;
+// 断连后重试间隔。上车后适配器上电有延迟、行程中偶发掉线 —— 只要用户没手动断开就一直重试。
+const RECONNECT_DELAY_MS = 4_000;
 
 interface LiveSessionValue {
   phase: LivePhase;
@@ -48,6 +50,12 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const stopScanRef = useRef<(() => void) | null>(null);
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 用户是否想保持连接。true = 自动连接/断连自愈;手动 disconnect() 置 false 才停。
+  // 默认 true → 挂载即自动连接(兑现 UI「上车后自动连接,无需操作」)。
+  const wantConnRef = useRef(true);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // connect 是 useCallback,fail 里要调它但先于它定义 —— 用 ref 打破循环依赖。
+  const connectRef = useRef<() => void>(() => {});
 
   const setPhase = useCallback((p: LivePhase) => {
     phaseRef.current = p;
@@ -78,6 +86,13 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const clearReconnect = () => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  };
+
   const fail = useCallback(
     async (message: string) => {
       cleanupScan();
@@ -85,11 +100,18 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       await transportRef.current?.disconnect().catch(() => {});
       setError(message);
       setPhase('error');
+      // 用户仍想连着(没手动断)→ 隔一会儿自动重连,直到成功或用户 disconnect。
+      if (wantConnRef.current) {
+        clearReconnect();
+        reconnectTimerRef.current = setTimeout(() => connectRef.current(), RECONNECT_DELAY_MS);
+      }
     },
     [setPhase],
   );
 
   const disconnect = useCallback(async () => {
+    wantConnRef.current = false; // 手动断开 = 用户不想连了,停掉自动重连
+    clearReconnect();
     cleanupScan();
     stopStreaming();
     await transportRef.current?.disconnect().catch(() => {});
@@ -142,6 +164,8 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   );
 
   const connect = useCallback(() => {
+    wantConnRef.current = true; // 手动/自动触发都表明用户想连着
+    clearReconnect();
     if (phaseRef.current !== 'idle' && phaseRef.current !== 'error') return;
     setError(null);
     setPhase('scanning');
@@ -193,8 +217,24 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     })();
   }, [fail, setPhase, startPolling]);
 
+  // connect 重建时同步到 ref,供 fail 的重连回调使用
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  // 挂载即自动连接一次(兑现「上车后自动连接」)。connect 内部会等蓝牙 PoweredOn。
+  // 注:Settings「自动连接」开关目前是 mock(未接线/未持久化),默认恒为开 — 见 issue。
+  const didAutoConnect = useRef(false);
+  useEffect(() => {
+    if (!didAutoConnect.current && wantConnRef.current) {
+      didAutoConnect.current = true;
+      connect();
+    }
+  }, [connect]);
+
   useEffect(
     () => () => {
+      clearReconnect();
       cleanupScan();
       stopStreaming();
       transportRef.current?.disconnect().catch(() => {});
