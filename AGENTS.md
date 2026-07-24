@@ -12,6 +12,7 @@
 - react-native-ble-plx（BLE）
 - 无后端、无数据库;行程数据本地持久化(expo-file-system JSON,ADR-0028),导出走 share sheet
 - expo-notifications(本地通知)/ expo-secure-store(API key)/ @react-native-async-storage/async-storage(小型 KV)
+- CarPlay:@iternio/react-native-auto-play + react-native-nitro-modules(新架构 Nitro);本地 config plugin `plugins/withCarPlay.js`。CarPlay 层未经验证——等 entitlement(ADR-0029);CarPlay 行刷新 ≥10 秒(Apple driving-task 规则)
 
 ## Hard rules
 
@@ -125,3 +126,4 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 - `src/ble/` — BLE 扫描/连接/GATT 发现/串行通道
 - `src/obd/` — ELM327/STN 初始化与 Mode 01 PID 轮询
 - `src/analysis/` — 数据分析（`scripts/test-analysis.ts` 可离线跑）
+- `src/carplay/` — CarPlay 仪表盘(InformationTemplate 4 行,10 秒刷新)
