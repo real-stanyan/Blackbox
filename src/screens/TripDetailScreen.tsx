@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Card } from '../components/Card';
+import { LineChart } from '../components/LineChart';
 import { ToneIcon } from '../components/ToneIcon';
 import { Group } from '../components/Group';
 import { Row } from '../components/Row';
@@ -111,6 +112,24 @@ export function TripDetailScreen() {
           ))}
         </View>
       </Card>
+
+      {rec.scoreTimeline && rec.scoreTimeline.length >= 2 ? (
+        <>
+          <Text style={s.sectionLabel}>实时评分</Text>
+          <Card>
+            {(() => {
+              const last = rec.scoreTimeline[rec.scoreTimeline.length - 1];
+              return (
+                <LineChart
+                  series={rec.scoreTimeline.map((p) => p.score)}
+                  months={rec.scoreTimeline.map((p) => `${Math.round(p.t / 60000)}'`)}
+                  color={last.score >= 80 ? t.green : last.score >= 60 ? t.orange : t.red}
+                />
+              );
+            })()}
+          </Card>
+        </>
+      ) : null}
 
       <Text style={s.sectionLabel}>AI 分析</Text>
       {tr.analyzed ? (
