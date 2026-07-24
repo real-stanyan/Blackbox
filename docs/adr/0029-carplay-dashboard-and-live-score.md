@@ -16,6 +16,8 @@ CarPlay 显示发动机评分与慢变量;行程期间每 5 分钟调 MiniMax M3
 2. **盲写**。Apple CarPlay Developer Guide(2026-06):模拟器也要 entitlement
    provisioning——批前无法运行任何 CarPlay 界面。验收降级为 tsc + 手机 build
    可启动;渲染验证挂起等 entitlement。前提失效(申请被拒)→ 转手机横屏仪表盘。
+   entitlement 注入由 CARPLAY_ENTITLEMENT=1 环境变量控制,默认不注入——批前保住
+   手机 build 可签名。
 3. **10 秒刷新节流**。driving-task 类硬规则:「Do not periodically refresh data
    items in the CarPlay UI more than once every 10 seconds (for example, no
    real-time engine data)」。因此 CarPlay 不显示转速/车速(10 秒粒度无意义),

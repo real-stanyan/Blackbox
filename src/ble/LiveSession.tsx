@@ -133,7 +133,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     try {
       const key = await getApiKey();
       if (!key) {
-        markScoreStale();
+        if (tripRef.current === trip) markScoreStale();
         return;
       }
       const result = await analyzeLiveScore(stats, key);
@@ -141,7 +141,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       recordScore({ t: Date.now() - trip.startedAt, score: result.score, problem: result.problem });
     } catch (e) {
       console.log(`[score] 分析失败: ${e}`);
-      markScoreStale();
+      if (tripRef.current === trip) markScoreStale();
     }
   }, []);
 

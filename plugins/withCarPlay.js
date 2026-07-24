@@ -78,10 +78,14 @@ function withCarPlay(config) {
     c.modResults.UIApplicationSceneManifest = SCENE_MANIFEST;
     return c;
   });
-  config = withEntitlementsPlist(config, (c) => {
-    c.modResults['com.apple.developer.carplay-driving-task'] = true;
-    return c;
-  });
+  // Entitlement 是 Apple 授予制:批前注入会让自动签名失败,挡住手机侧验证。
+  // 批后用 CARPLAY_ENTITLEMENT=1 npx expo run:ios --device 打开。
+  if (process.env.CARPLAY_ENTITLEMENT === '1') {
+    config = withEntitlementsPlist(config, (c) => {
+      c.modResults['com.apple.developer.carplay-driving-task'] = true;
+      return c;
+    });
+  }
   config = withAppDelegate(config, (c) => {
     if (c.modResults.language !== 'swift') {
       throw new Error('withCarPlay: expected a Swift AppDelegate (Expo SDK 57 default)');

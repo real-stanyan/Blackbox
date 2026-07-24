@@ -70,7 +70,8 @@ that's not a failure verdict — the Expo app does unrestricted discovery.
 2. 说明用途:行车中查看发动机健康评分与冷却液温度等慢变量(10 秒以上刷新,
    合规 driving-task 模板 UI,无自定义界面)。审批数周,可能被拒。
 3. 批准后:Apple Developer 后台给 App ID 勾选 CarPlay capability,重新生成
-   provisioning profile,Xcode 导入,然后 `npx expo run:ios --device` 重建。
+   provisioning profile,Xcode 导入,然后 `CARPLAY_ENTITLEMENT=1 npx expo run:ios --device` 重建。
+   批前直接 `npx expo run:ios --device`(不带变量)即可构建手机侧,CarPlay entitlement 不注入。
 4. 验证清单(批前无法执行,连 CarPlay Simulator 都要 entitlement):模板挂载、
    10 秒行刷新、未连接空态、断开 CarPlay 后手机 app 正常。
 
