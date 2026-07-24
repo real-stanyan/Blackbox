@@ -12,7 +12,10 @@ import { saveTrip } from '../data/tripStore';
 import { TripRecord } from '../data/types';
 import { notifyConnected, notifyDisconnected } from '../notifications/notify';
 import { runAnalysis } from '../analysis/runAnalysis';
-import { setVehicle } from '../data/settingsStore';
+import { getApiKey, setVehicle } from '../data/settingsStore';
+import { analyzeLiveScore, buildWindowStats } from '../analysis/liveScore';
+import { markScoreStale, recordScore, startScoreTrip, takeScoreTimeline } from '../data/liveScoreStore';
+import { publishLiveData } from '../data/liveDataStore';
 
 export type LivePhase = 'idle' | 'scanning' | 'connecting' | 'streaming' | 'error';
 
@@ -34,6 +37,10 @@ const RECONNECT_DELAY_MS = 4_000;
 const GRACE_MS = 20_000;
 const MIN_TRIP_MS = 60_000;
 const MIN_TRIP_SAMPLES = 20;
+// 5 分钟滚动评分:间隔与窗口都是 5 分钟;窗口样本太少(刚起步/长时间断连)跳过本轮。
+const SCORE_INTERVAL_MS = 300_000;
+const SCORE_WINDOW_MS = 300_000;
+const SCORE_MIN_SAMPLES = 10;
 
 interface LiveSessionValue {
   phase: LivePhase;
@@ -72,6 +79,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   // 进行中的行程。跨 BLE 重连存活 — 只有宽限超时或手动断开才终结。
   const tripRef = useRef<{ startedAt: number; samples: Sample[]; distanceKm: number } | null>(null);
   const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scoreTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const setPhase = useCallback((p: LivePhase) => {
     phaseRef.current = p;
@@ -109,15 +117,46 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const clearScoreTimer = () => {
+    if (scoreTimerRef.current) {
+      clearInterval(scoreTimerRef.current);
+      scoreTimerRef.current = null;
+    }
+  };
+
+  // 每 5 分钟评一次分。失败只标 stale,绝不打断行程。
+  const runLiveScore = useCallback(async () => {
+    const trip = tripRef.current;
+    if (!trip) return;
+    const stats = buildWindowStats(trip.samples, SCORE_WINDOW_MS);
+    if (stats.sampleCount < SCORE_MIN_SAMPLES) return;
+    try {
+      const key = await getApiKey();
+      if (!key) {
+        markScoreStale();
+        return;
+      }
+      const result = await analyzeLiveScore(stats, key);
+      if (tripRef.current !== trip) return; // 行程已终结 — 丢弃迟到结果
+      recordScore({ t: Date.now() - trip.startedAt, score: result.score, problem: result.problem });
+    } catch (e) {
+      console.log(`[score] 分析失败: ${e}`);
+      markScoreStale();
+    }
+  }, []);
+
   // 行程终结:合格 → 提特征落盘 + 触发分析;太短 → 丢弃。通知合并在这里发。
   const finalizeTrip = useCallback((notify: boolean) => {
     clearGrace();
+    clearScoreTimer();
     const trip = tripRef.current;
     tripRef.current = null;
     setValues({});
     setElapsedSec(0);
     setDistanceKm(0);
+    publishLiveData({ streaming: false, values: {}, startedAt: null, distanceKm: 0 });
     if (!trip) return;
+    const scoreTimeline = takeScoreTimeline();
     const endedAt = Date.now();
     const durMs = endedAt - trip.startedAt;
     if (durMs < MIN_TRIP_MS || trip.samples.length < MIN_TRIP_SAMPLES) {
@@ -138,6 +177,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       series: buildSeries(trip.samples),
       report: null,
       verdict: verdictFromTrip(features, null),
+      ...(scoreTimeline.length > 0 ? { scoreTimeline } : {}),
     };
     void saveTrip(record)
       .then(() => {
@@ -164,6 +204,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       await transportRef.current?.disconnect().catch(() => {});
       setError(message);
       setPhase('error');
+      publishLiveData({ streaming: false });
       // 行程还在:给 20s 宽限,重连成功继续同一行程;超时才终结+通知
       if (tripRef.current && !graceTimerRef.current) {
         graceTimerRef.current = setTimeout(() => {
@@ -201,6 +242,12 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
         setDistanceKm(0);
         void notifyConnected(deviceName);
         void setVehicle({ adapter: deviceName });
+        startScoreTrip();
+        publishLiveData({ streaming: true, values: {}, startedAt: tripRef.current.startedAt, distanceKm: 0 });
+        clearScoreTimer();
+        scoreTimerRef.current = setInterval(() => void runLiveScore(), SCORE_INTERVAL_MS);
+      } else {
+        publishLiveData({ streaming: true }); // 宽限内重连 — 同一行程,只翻转连接位
       }
       const trip = tripRef.current!;
       setElapsedSec(Math.floor((Date.now() - trip.startedAt) / 1000));
@@ -222,12 +269,14 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
               const tripSample: Sample = { ...sample, t: Date.now() - trip.startedAt };
               trip.samples.push(tripSample);
               setValues((prev) => ({ ...prev, [OBD_TO_UI[sample.key] ?? sample.key]: sample.value }));
+              publishLiveData({ values: { [OBD_TO_UI[sample.key] ?? sample.key]: sample.value } });
               if (sample.key === 'speed') {
                 if (lastSpeed) {
                   const dtH = (tripSample.t - lastSpeed.t) / 3_600_000;
                   const avg = (lastSpeed.v + sample.value) / 2;
                   trip.distanceKm += avg * dtH;
                   setDistanceKm(trip.distanceKm);
+                  publishLiveData({ distanceKm: trip.distanceKm });
                 }
                 lastSpeed = { t: tripSample.t, v: sample.value };
               }
@@ -239,7 +288,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
         }
       })();
     },
-    [fail],
+    [fail, runLiveScore],
   );
 
   const connect = useCallback(() => {
@@ -317,6 +366,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       cleanupScan();
       stopStreaming();
       clearGrace(); // app 卸载即进程终结,行程内存数据无处落 — 不强行 finalize
+      clearScoreTimer();
       transportRef.current?.disconnect().catch(() => {});
       transportRef.current?.destroy();
       transportRef.current = null; // destroyed BleManager 不可复用,重挂载时懒建新实例
