@@ -13,7 +13,7 @@ export function registerCarPlay(): void {
   HybridAutoPlay.addListener('didConnect', () => {
     if (timer) clearInterval(timer);
     template = new InformationTemplate({ title: { text: 'Blackbox' }, items: buildCarPlayItems() });
-    template.setRootTemplate();
+    template.setRootTemplate().catch(() => {});
     timer = setInterval(() => {
       template?.updateItems(buildCarPlayItems()).catch(() => {});
     }, REFRESH_MS);
