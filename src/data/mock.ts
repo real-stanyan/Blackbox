@@ -1,74 +1,9 @@
 // Mock 数据 — 1:1 抽自 prototype/data.js,带 TS 类型。
 // 后续 sub-project B/C/D 接入真实数据时,接口字段保持不变。
 
-export interface Vehicle {
-  name: string;
-  model: string;
-  engine: string;
-  plate: string;
-  odo: number;
-  adapter: string;
-}
-
-export interface LivePid {
-  key: string;
-  label: string;
-  unit: string;
-  idle: number | null;
-  drive: number | null;
-  jitter: number;
-  note?: string;
-}
-
-export type Tone = 'good' | 'watch' | 'inspect' | 'info';
-
-export interface Finding {
-  tone: Tone;
-  title: string;
-  detail: string;
-  action?: string;
-}
-
-export interface Trip {
-  id: string;
-  group: string;
-  time: string;
-  title: string;
-  dur: number;
-  dist: number;
-  verdict: Tone;
-  cold: boolean;
-  maxCoolant: number;
-  avgRpm: number;
-  ltft: number;
-  stft: number;
-  samples: number;
-  route: string;
-  summary: string;
-  findings: Finding[];
-  featured?: boolean;
-}
-
-export interface Trend {
-  label: string;
-  unit: string;
-  now: number;
-  dir: 'up' | 'down' | 'flat';
-  tone: Tone;
-  note: string;
-  series: number[];
-  months: string[];
-}
-
-export interface Outlook {
-  score: number;
-  verdictLabel: string;
-  verdictTone: Tone;
-  headline: string;
-  current: Finding[];
-  future: Finding[];
-  normal: string[];
-}
+// 类型已迁 src/data/types.ts;MOCK 数据将在 sub-project C 收尾时删除。
+export type { Vehicle, LivePid, Tone, Finding, Trip, Trend, Outlook } from './types';
+import type { Vehicle, LivePid, Trip, Trend, Outlook } from './types';
 
 export const MOCK = {
   vehicle: {
@@ -99,6 +34,7 @@ export const MOCK = {
         { tone: 'info', title: '机油温度暂时读不到', detail: '你这台车的电脑没有对外提供机油温度,这一项已自动跳过,不影响其它监控。' },
       ],
       featured: true,
+      analyzed: true,
     },
     {
       id: 't2', group: '今天', time: '18:20', title: '下班回家', dur: 34, dist: 9.1,
@@ -106,6 +42,7 @@ export const MOCK = {
       samples: 1610, route: '公司 → 家',
       summary: '一切正常,热车状态下各项指标都在健康范围内。',
       findings: [{ tone: 'good', title: '各项指标正常', detail: '热车行驶,水温、燃油修正、怠速转速都在正常范围。' }],
+      analyzed: true,
     },
     {
       id: 't3', group: '昨天', time: '08:05', title: '早高峰通勤', dur: 25, dist: 8.4,
@@ -113,6 +50,7 @@ export const MOCK = {
       samples: 1240, route: '家 → 公司',
       summary: '冷启动升温正常,无异常。',
       findings: [{ tone: 'good', title: '冷启动正常', detail: '水温升温曲线正常,没有异常抖动。' }],
+      analyzed: true,
     },
     {
       id: 't4', group: '昨天', time: '12:36', title: '午间外出', dur: 12, dist: 3.2,
@@ -120,6 +58,7 @@ export const MOCK = {
       samples: 560, route: '公司 → 餐厅',
       summary: '短途行驶,正常。',
       findings: [{ tone: 'good', title: '短途行程正常', detail: '行程较短,未发现异常。' }],
+      analyzed: true,
     },
     {
       id: 't5', group: '本周', time: '周三 07:51', title: '早高峰通勤', dur: 29, dist: 8.7,
@@ -127,6 +66,7 @@ export const MOCK = {
       samples: 1400, route: '家 → 公司',
       summary: '正常。',
       findings: [{ tone: 'good', title: '各项指标正常', detail: '未发现异常。' }],
+      analyzed: true,
     },
     {
       id: 't6', group: '本周', time: '周二 19:10', title: '晚间购物', dur: 41, dist: 14.5,
@@ -134,6 +74,7 @@ export const MOCK = {
       samples: 1980, route: '家 → 商场 → 家',
       summary: '中长途行驶,正常。',
       findings: [{ tone: 'good', title: '各项指标正常', detail: '高速与市区混合工况均正常。' }],
+      analyzed: true,
     },
     {
       id: 't7', group: '更早', time: '上周日 09:22', title: '周末郊游', dur: 78, dist: 46.3,
@@ -141,6 +82,7 @@ export const MOCK = {
       samples: 3760, route: '市区 → 郊区',
       summary: '长途高速行驶,发动机状态良好。',
       findings: [{ tone: 'good', title: '长途表现良好', detail: '高速巡航稳定,水温控制良好。' }],
+      analyzed: true,
     },
     {
       id: 't8', group: '更早', time: '上周五 08:03', title: '早高峰通勤', dur: 31, dist: 8.9,
@@ -148,6 +90,7 @@ export const MOCK = {
       samples: 1490, route: '家 → 公司',
       summary: '正常。',
       findings: [{ tone: 'good', title: '各项指标正常', detail: '未发现异常。' }],
+      analyzed: true,
     },
   ] satisfies Trip[],
   trends: {
