@@ -11,10 +11,11 @@ export function registerCarPlay(): void {
   let timer: ReturnType<typeof setInterval> | null = null;
 
   HybridAutoPlay.addListener('didConnect', () => {
+    if (timer) clearInterval(timer);
     template = new InformationTemplate({ title: { text: 'Blackbox' }, items: buildCarPlayItems() });
     template.setRootTemplate();
     timer = setInterval(() => {
-      void template?.updateItems(buildCarPlayItems());
+      template?.updateItems(buildCarPlayItems()).catch(() => {});
     }, REFRESH_MS);
   });
 
