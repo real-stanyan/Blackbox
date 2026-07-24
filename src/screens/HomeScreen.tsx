@@ -5,6 +5,7 @@ import { Card } from '../components/Card';
 import { Icon } from '../components/Icon';
 import { AskButton } from '../components/AskButton';
 import { StatTile } from './components/StatTile';
+import { LiveScoreCard } from './components/LiveScoreCard';
 import { useTheme } from '../context/Theme';
 import { useLivePids } from '../hooks/useLivePids';
 import { useVehicle } from '../hooks/useVehicle';
@@ -96,6 +97,8 @@ export function HomeScreen() {
           </Pressable>
         )}
       </Card>
+
+      <LiveScoreCard />
 
       <Text style={s.sectionLabel}>{driving ? '实时数据 · 持续更新' : '连接后显示实时数据'}</Text>
       <View style={s.tilesWrap}>
