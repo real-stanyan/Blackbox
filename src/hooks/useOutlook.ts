@@ -1,6 +1,8 @@
-import { MOCK } from '../data/mock';
-import type { Outlook } from '../data/mock';
+import { useSyncExternalStore } from 'react';
+import { getOutlook, subscribeOutlook } from '../data/outlookStore';
+import type { Outlook } from '../data/types';
 
-export function useOutlook(): Outlook {
-  return MOCK.outlook;
+/** null = 尚无展望(没有已分析行程/没配 key)。 */
+export function useOutlook(): Outlook | null {
+  return useSyncExternalStore(subscribeOutlook, getOutlook);
 }

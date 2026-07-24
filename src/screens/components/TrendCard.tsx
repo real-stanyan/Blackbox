@@ -4,7 +4,7 @@ import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { LineChart } from '../../components/LineChart';
 import { useTheme } from '../../context/Theme';
-import type { Trend } from '../../data/mock';
+import type { Trend } from '../../data/types';
 
 export interface TrendCardProps {
   tr: Trend;

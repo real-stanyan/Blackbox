@@ -1,5 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
+import { Card } from '../components/Card';
 import { Group } from '../components/Group';
 import { Row } from '../components/Row';
 import { Badge } from '../components/Badge';
@@ -36,6 +37,20 @@ export function HistoryScreen() {
       每次断开连接后,自动记录并生成一份健康报告。
     </Text>
   );
+
+  if (trips.length === 0) {
+    return (
+      <Screen title="行程历史" below={below}>
+        <Card style={{ alignItems: 'center', paddingVertical: 36 }}>
+          <Icon name="car" size={34} color={t.label3} />
+          <Text style={{ color: t.label2, fontSize: 15, marginTop: 10 }}>还没有行程</Text>
+          <Text style={{ color: t.label3, fontSize: 13, marginTop: 4, textAlign: 'center', paddingHorizontal: 30 }}>
+            连上车开一段,断开后会自动记录并生成报告。
+          </Text>
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
     <Screen title="行程历史" below={below}>

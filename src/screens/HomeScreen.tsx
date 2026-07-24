@@ -70,7 +70,7 @@ export function HomeScreen() {
             <Text style={s.heroTitle}>{driving ? '已连接' : '等待连接'}</Text>
             <Text style={s.heroSub}>
               {driving
-                ? `${vehicle.adapter} · ${vehicle.name} ${vehicle.model.split(' · ')[1]}`
+                ? `${vehicle.adapter} · ${vehicle.name} ${vehicle.model.split(' · ')[1] ?? vehicle.model}`
                 : '上车后自动连接,无需操作'}
             </Text>
           </View>
@@ -103,9 +103,8 @@ export function HomeScreen() {
           const has = driving && p.drive != null;
           const isInt = p.key === 'rpm' || p.key === 'speed';
           const v: string | number = has ? (isInt ? Math.round(p.drive!) : p.drive!) : '—';
-          const ltftHigh = has && p.key === 'ltft' && Math.abs(p.drive!) >= 5;
-          const col = p.key === 'coolant' ? t.blue : ltftHigh ? t.amber : t.label;
-          const note = p.key === 'oil' && !has ? p.note : ltftHigh ? '略偏高' : undefined;
+          const col = p.key === 'coolant' ? t.blue : t.label;
+          const note = p.key === 'oil' && !has ? p.note : undefined;
           return (
             <StatTile
               key={p.key}

@@ -39,7 +39,8 @@
         }
       ],
       "expo-sharing",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-notifications"
     ],
     "extra": {
       "eas": {
