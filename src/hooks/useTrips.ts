@@ -3,7 +3,7 @@ import { getIndex, getTrip, subscribeTrips } from '../data/tripStore';
 import { tripToDisplay } from '../data/display';
 import type { Trip, TripRecord } from '../data/types';
 
-// 契约:返回 Trip[](时间倒序),字段对齐原 mock。底层从 MOCK 换 tripStore。
+// 契约:返回 Trip[](时间倒序),字段对齐原展示型。底层数据来自 tripStore。
 export function useTrips(): Trip[] {
   const index = useSyncExternalStore(subscribeTrips, getIndex);
   const [trips, setTrips] = useState<Trip[]>([]);

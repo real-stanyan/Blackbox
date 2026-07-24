@@ -8,12 +8,27 @@ import { AskButton } from '../components/AskButton';
 import { Icon } from '../components/Icon';
 import { useTheme } from '../context/Theme';
 import { useOutlook } from '../hooks/useOutlook';
-import type { Finding } from '../data/mock';
+import type { Finding } from '../data/types';
 
 // Health — 健康展望。对照 prototype/screensB.jsx HealthScreen。
 export function HealthScreen() {
   const t = useTheme();
   const O = useOutlook();
+
+  if (!O) {
+    return (
+      <Screen title="健康展望" right={<AskButton />}>
+        <Card style={{ alignItems: 'center', paddingVertical: 36 }}>
+          <Icon name="checkcircle" size={34} color={t.label3} />
+          <Text style={{ color: t.label2, fontSize: 15, marginTop: 10 }}>数据积累中</Text>
+          <Text style={{ color: t.label3, fontSize: 13, marginTop: 4, textAlign: 'center', paddingHorizontal: 30 }}>
+            行程报告生成后,这里会给出整车健康展望。需要在设置中配置 API Key。
+          </Text>
+        </Card>
+      </Screen>
+    );
+  }
+
   const scoreCol = O.score >= 80 ? t.green : (O.score >= 60 ? t.amber : t.red);
 
   const Section = ({ title, items }: { title: string; items: Finding[] }) => (

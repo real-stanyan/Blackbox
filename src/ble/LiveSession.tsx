@@ -16,7 +16,7 @@ import { setVehicle } from '../data/settingsStore';
 
 export type LivePhase = 'idle' | 'scanning' | 'connecting' | 'streaming' | 'error';
 
-// OBD PID key(src/obd/pids.ts)→ UI tile key(MOCK.livePids)
+// OBD PID key(src/obd/pids.ts)→ UI tile key(livePidMeta.ts)
 const OBD_TO_UI: Record<string, string> = {
   rpm: 'rpm',
   speed: 'speed',
