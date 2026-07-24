@@ -81,6 +81,15 @@ export interface SeriesPoint {
   v: number;
 }
 
+export interface ScorePoint {
+  /** ms since trip start */
+  t: number;
+  /** 0-100 */
+  score: number;
+  /** 5-20 English words */
+  problem: string;
+}
+
 export interface TripMetrics {
   /** ltft_b1 全程均值;车不给该 PID 时 null。 */
   ltftMean: number | null;
@@ -106,6 +115,8 @@ export interface TripRecord {
   /** null = 未分析(无 key / 调用失败)。 */
   report: TripReport | null;
   verdict: Tone;
+  /** 5 分钟滚动评分时间线;旧记录无此字段。 */
+  scoreTimeline?: ScorePoint[];
 }
 
 export interface TripIndexEntry {
