@@ -87,7 +87,10 @@ export async function initTripStore(): Promise<void> {
 export async function saveTrip(record: TripRecord): Promise<void> {
   const f = new File(tripsDir, `${record.id}.json`);
   f.write(JSON.stringify(record)); // 不吞错:抛给调用方,LiveSession 记 console
-  index = [entryOf(record), ...index.filter((e) => e.id !== record.id)];
+  // updateTripReport 会重存旧行程，必须重排保持时间倒序
+  index = [entryOf(record), ...index.filter((e) => e.id !== record.id)].sort(
+    (a, b) => b.startedAt - a.startedAt,
+  );
   writeIndex();
   notifyListeners();
 }
