@@ -10,7 +10,8 @@
 - Expo ~57（dev client；Expo Go 跑不了 BLE，必须真机 + `expo run:ios/android --device`）
 - React Native 0.86 / React 19.2 / TypeScript ~6.0
 - react-native-ble-plx（BLE）
-- 无后端、无数据库；session 数据走 share sheet 导出 JSON
+- 无后端、无数据库;行程数据本地持久化(expo-file-system JSON,ADR-0028),导出走 share sheet
+- expo-notifications(本地通知)/ expo-secure-store(API key)/ @react-native-async-storage/async-storage(小型 KV)
 
 ## Hard rules
 
