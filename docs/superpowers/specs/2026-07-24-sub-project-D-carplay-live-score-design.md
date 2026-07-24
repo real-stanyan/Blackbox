@@ -18,12 +18,11 @@
 - 不做多页 CarPlay 导航结构(单屏)
 - 不改既有行程结束后的整程分析(analyzeTrip 保持原样,两者独立)
 
-## 硬约束(先读)
+## 硬约束(先读,2026-07-24 研究修订)
 
-- **CarPlay entitlement**:`com.apple.developer.carplay-driving-task`,必须 stanyan 本人在 Apple Developer 网站申请,数周,可能被拒。批下来之前:
-  - CarPlay Simulator(Mac,Xcode additional tools)可验证 UI——simulator 不校验 provisioning
-  - simulator 无 BLE,真数据链路测不了;真车 CarPlay 必须等批
-- 库:`@g4rb4g3/react-native-carplay`(fork,2.7.x,RN 0.76+ 新架构)。上游 birkir 原版不支持新架构与 Expo,排除。fork + Expo 57 组合无官方背书——CarPlay Simulator 跑不通则降级为手写 Swift native module(另开 spec)
+- **CarPlay entitlement**:`com.apple.developer.carplay-driving-task`(Apple CarPlay Developer Guide 2026-06 确认,iOS 16+),必须 stanyan 本人在 https://developer.apple.com/carplay 申请,数周,可能被拒。**Apple 原文:「Xcode and Simulator require a Provisioning Profile that supports CarPlay」——批前连 CarPlay Simulator 都进不去。** 决策(stanyan 2026-07-24):CarPlay 层盲写,标「未经验证——等 entitlement」;手机侧(分析引擎/Home 卡/scoreTimeline)照常真机验证
+- **刷新节流(Apple driving-task 硬规则)**:「Do not periodically refresh data items in the CarPlay UI more than once every 10 seconds (for example, no real-time engine data)」——CarPlay 行刷新 ≥10 秒/次,不做秒级实时
+- 库:`@iternio/react-native-auto-play`(react-native-carplay 官方后继,维护者同一批人;g4rb4g3 fork 与 birkir 上游均已归档/停更,排除)。Nitro Modules,新架构 only,自带 scene delegate(Info.plist 只引类名)。附带要求:`react-native-nitro-modules` peer dep、`patch-package`(expo-splash-screen 57.0.2 补丁 + react-native 补丁——上游钉 0.83.5,0.86 需验证/重做)、`expo-build-properties` 设 `buildReactNativeFromSource: true`。RN 0.86 组合无人验证过——tsc + 手机侧构建通过即算本轮完成,CarPlay 渲染等 entitlement
 - Expo API 用法以 https://docs.expo.dev/versions/v57.0.0/ 为准(硬规则)
 
 ## 1. 滚动分析引擎
@@ -48,15 +47,16 @@
 
 `src/carplay/`:
 
-- 库:`@g4rb4g3/react-native-carplay`
-- 单屏模板(Information 或 List,实现时按 fork 支持度选),行:
-  1. 分数(如 "Score: 87")
-  2. 问题描述
-  3. 连接状态(已连接 OBDLink CX / 未连接)
-  4. 转速 5. 水温 6. 车速 7. LTFT
-- 实时行随 livePids 刷新(≈1s);分析行随 5 分钟更新;未连接时只显示状态行 + 空态文案
-- `plugins/withCarPlay.js` 本地 config plugin:注入 Info.plist scene manifest(CPTemplateApplicationScene)+ entitlement;app.json 挂载
-- CarPlay 连接/断开事件驱动模板挂载/卸载;app 冷启动被 CarPlay 唤起时也能挂载
+- 库:`@iternio/react-native-auto-play`,`InformationTemplate`(iOS 上限 **4 行** TextRow,无图)
+- 4 行(10 秒节流刷新,合规):
+  1. Score + 问题描述(title = "Score: 87",detailedText = problem;无分析时 "—" / "Waiting for analysis")
+  2. 水温(慢变量,10 秒粒度有意义)
+  3. LTFT
+  4. 行程(时长 + 里程)
+- OBD 未连接时 4 行换空态文案("Not connected · start driving");转速/车速不上 CarPlay(10 秒一跳无意义且踩 Apple 红线)
+- 挂载模式(库文档唯一支持路径):`registerAutoPlay()` 在 index.ts 注册 `HybridAutoPlay.addListener('didConnect')`,**didConnect 回调内**才构造 InformationTemplate 并 `setRootTemplate()`;didDisconnect 清理定时器
+- `plugins/withCarPlay.js` 本地 config plugin:注入 Info.plist `UIApplicationSceneManifest`(引库自带 delegate 类名:HeadUnitSceneDelegate / WindowApplicationSceneDelegate 等)+ entitlements `com.apple.developer.carplay-driving-task` + AppDelegate `getRootViewForAutoplay` patch;app.json 挂载
+- 全层盲写:tsc 过 + 手机 build 不崩 = 本轮完成;CarPlay 渲染验证等 entitlement
 
 ## 3. 手机侧 UI
 
@@ -66,12 +66,12 @@
 
 ## 4. 协议/门禁
 
-- 新依赖 `@g4rb4g3/react-native-carplay` + 本地 config plugin = AGENTS.md Tech stack 变更 = **L1**,stanyan 已会话内同意;走 issue + ADR + PR
+- 新依赖 `@iternio/react-native-auto-play` + `react-native-nitro-modules` + `patch-package` + `expo-build-properties` + 本地 config plugin = AGENTS.md Tech stack 变更 = **L1**,stanyan 已会话内同意;走 issue + ADR + PR
 - 门禁 `npx tsc --noEmit` 全绿
-- 验证分级:CarPlay Simulator 验证 UI;BLE + CarPlay 全链路标注「未经真车验证」(硬规则);entitlement 申请步骤写进 README
+- 验证分级:CarPlay 层整体标注「未经验证——等 entitlement」(硬规则精神);手机侧真机验证;entitlement 申请步骤写进 README
 
 ## 测试与验证
 
-- liveScore 压缩统计 / 输出校验为纯函数,`scripts/test-analysis.ts` 模式离线跑
-- CarPlay Simulator 清单:模板挂载、行刷新、未连接空态、断开 CarPlay 后 app 正常
+- liveScore 压缩统计 / 输出校验为纯函数,`scripts/test-analysis.ts` 模式离线跑(新增 `scripts/test-livescore.ts`)
+- CarPlay 层:tsc + 真机 build 不崩(模块 import 不炸)= 本轮验收;渲染/交互清单留给 entitlement 批后(模板挂载、10 秒行刷新、未连接空态、断开 CarPlay 后 app 正常)
 - 真机(手机侧):5 分钟定时触发、Home 卡更新、scoreTimeline 落盘、无 key stale 路径
