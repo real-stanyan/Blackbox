@@ -2,8 +2,17 @@ import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, 
 import { PermissionsAndroid, Platform } from 'react-native';
 import { Device } from 'react-native-ble-plx';
 import { BleTransport } from './BleTransport';
-import { ElmSession } from '../obd/ElmSession';
+import { ElmSession, Sample } from '../obd/ElmSession';
 import { PIDS } from '../obd/pids';
+import { extractFeatures } from '../analysis/features';
+import { buildSeries } from '../analysis/series';
+import { computeMetrics } from '../analysis/tripMetrics';
+import { verdictFromTrip } from '../analysis/verdict';
+import { saveTrip } from '../data/tripStore';
+import { TripRecord } from '../data/types';
+import { notifyConnected, notifyDisconnected } from '../notifications/notify';
+import { runAnalysis } from '../analysis/runAnalysis';
+import { setVehicle } from '../data/settingsStore';
 
 export type LivePhase = 'idle' | 'scanning' | 'connecting' | 'streaming' | 'error';
 
@@ -21,6 +30,10 @@ const ADAPTER_NAME = /OBD|CX|LINK|STN|VLINK/i;
 const SCAN_TIMEOUT_MS = 30_000;
 // 断连后重试间隔。上车后适配器上电有延迟、行程中偶发掉线 —— 只要用户没手动断开就一直重试。
 const RECONNECT_DELAY_MS = 4_000;
+// 断开后的行程宽限:期间重连成功 = 同一行程继续;超时 = 行程结束落盘(spec §1/§2)。
+const GRACE_MS = 20_000;
+const MIN_TRIP_MS = 60_000;
+const MIN_TRIP_SAMPLES = 20;
 
 interface LiveSessionValue {
   phase: LivePhase;
@@ -56,6 +69,9 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // connect 是 useCallback,fail 里要调它但先于它定义 —— 用 ref 打破循环依赖。
   const connectRef = useRef<() => void>(() => {});
+  // 进行中的行程。跨 BLE 重连存活 — 只有宽限超时或手动断开才终结。
+  const tripRef = useRef<{ startedAt: number; samples: Sample[]; distanceKm: number } | null>(null);
+  const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setPhase = useCallback((p: LivePhase) => {
     phaseRef.current = p;
@@ -86,6 +102,54 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const clearGrace = () => {
+    if (graceTimerRef.current) {
+      clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
+  };
+
+  // 行程终结:合格 → 提特征落盘 + 触发分析;太短 → 丢弃。通知合并在这里发。
+  const finalizeTrip = useCallback((notify: boolean) => {
+    clearGrace();
+    const trip = tripRef.current;
+    tripRef.current = null;
+    setValues({});
+    setElapsedSec(0);
+    setDistanceKm(0);
+    if (!trip) return;
+    const endedAt = Date.now();
+    const durMs = endedAt - trip.startedAt;
+    if (durMs < MIN_TRIP_MS || trip.samples.length < MIN_TRIP_SAMPLES) {
+      console.log(`[trip] 丢弃过短行程 ${Math.round(durMs / 1000)}s / ${trip.samples.length} samples`);
+      if (notify) void notifyDisconnected(null);
+      return;
+    }
+    const features = extractFeatures(trip.samples);
+    const record: TripRecord = {
+      id: String(trip.startedAt),
+      startedAt: trip.startedAt,
+      endedAt,
+      durationMin: Math.round((durMs / 60000) * 10) / 10,
+      distanceKm: Math.round(trip.distanceKm * 100) / 100,
+      samples: trip.samples.length,
+      metrics: computeMetrics(trip.samples),
+      features,
+      series: buildSeries(trip.samples),
+      report: null,
+      verdict: verdictFromTrip(features, null),
+    };
+    void saveTrip(record)
+      .then(() => {
+        if (notify) void notifyDisconnected({ durMin: record.durationMin, distKm: record.distanceKm });
+        void runAnalysis(record);
+      })
+      .catch((e) => {
+        console.log(`[trip] 落盘失败: ${e}`);
+        if (notify) void notifyDisconnected(null);
+      });
+  }, []);
+
   const clearReconnect = () => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
@@ -100,13 +164,19 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       await transportRef.current?.disconnect().catch(() => {});
       setError(message);
       setPhase('error');
-      // 用户仍想连着(没手动断)→ 隔一会儿自动重连,直到成功或用户 disconnect。
+      // 行程还在:给 20s 宽限,重连成功继续同一行程;超时才终结+通知
+      if (tripRef.current && !graceTimerRef.current) {
+        graceTimerRef.current = setTimeout(() => {
+          graceTimerRef.current = null;
+          finalizeTrip(true);
+        }, GRACE_MS);
+      }
       if (wantConnRef.current) {
         clearReconnect();
         reconnectTimerRef.current = setTimeout(() => connectRef.current(), RECONNECT_DELAY_MS);
       }
     },
-    [setPhase],
+    [setPhase, finalizeTrip],
   );
 
   const disconnect = useCallback(async () => {
@@ -115,22 +185,27 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     cleanupScan();
     stopStreaming();
     await transportRef.current?.disconnect().catch(() => {});
-    setValues({});
-    setElapsedSec(0);
-    setDistanceKm(0);
+    finalizeTrip(false);
     setError(null);
     setPhase('idle');
-  }, [setPhase]);
+  }, [setPhase, finalizeTrip]);
 
   const startPolling = useCallback(
-    (session: ElmSession) => {
+    (session: ElmSession, deviceName: string) => {
       pollingRef.current = true;
-      setValues({});
-      setElapsedSec(0);
-      setDistanceKm(0);
-      const startedAt = Date.now();
+      clearGrace(); // 宽限内重连成功 → 同一行程继续
+      const isNewTrip = !tripRef.current;
+      if (isNewTrip) {
+        tripRef.current = { startedAt: Date.now(), samples: [], distanceKm: 0 };
+        setValues({});
+        setDistanceKm(0);
+        void notifyConnected(deviceName);
+        void setVehicle({ adapter: deviceName });
+      }
+      const trip = tripRef.current!;
+      setElapsedSec(Math.floor((Date.now() - trip.startedAt) / 1000));
       elapsedTimerRef.current = setInterval(() => {
-        setElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+        setElapsedSec(Math.floor((Date.now() - trip.startedAt) / 1000));
       }, 1000);
 
       void (async () => {
@@ -143,14 +218,18 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
             try {
               const sample = await session.queryPid(pid);
               if (!sample) continue;
+              // Sample.t 是 ElmSession 起算 — 重连会归零。行程内统一改用行程起算。
+              const tripSample: Sample = { ...sample, t: Date.now() - trip.startedAt };
+              trip.samples.push(tripSample);
               setValues((prev) => ({ ...prev, [OBD_TO_UI[sample.key] ?? sample.key]: sample.value }));
               if (sample.key === 'speed') {
                 if (lastSpeed) {
-                  const dtH = (sample.t - lastSpeed.t) / 3_600_000;
+                  const dtH = (tripSample.t - lastSpeed.t) / 3_600_000;
                   const avg = (lastSpeed.v + sample.value) / 2;
-                  setDistanceKm((d) => d + avg * dtH);
+                  trip.distanceKm += avg * dtH;
+                  setDistanceKm(trip.distanceKm);
                 }
-                lastSpeed = { t: sample.t, v: sample.value };
+                lastSpeed = { t: tripSample.t, v: sample.value };
               }
             } catch (e: any) {
               if (pollingRef.current) await fail(`连接中断:${e.message}`);
@@ -205,7 +284,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
                 return;
               }
               setPhase('streaming');
-              startPolling(session);
+              startPolling(session, name || 'OBD 适配器');
             } catch (e: any) {
               await fail(e.message);
             }
@@ -237,6 +316,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       clearReconnect();
       cleanupScan();
       stopStreaming();
+      clearGrace(); // app 卸载即进程终结,行程内存数据无处落 — 不强行 finalize
       transportRef.current?.disconnect().catch(() => {});
       transportRef.current?.destroy();
       transportRef.current = null; // destroyed BleManager 不可复用,重挂载时懒建新实例

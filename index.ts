@@ -1,6 +1,11 @@
 import { registerRootComponent } from 'expo';
 
 import App from './App';
+import { initTripStore } from './src/data/tripStore';
+import { initSettingsStore } from './src/data/settingsStore';
+import { initNotifications } from './src/notifications/notify';
+
+void initSettingsStore().then(() => Promise.all([initTripStore(), initNotifications()]));
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);
 // It also ensures that whether you load the app in Expo Go or in a native build,
