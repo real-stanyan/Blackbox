@@ -46,7 +46,7 @@
       [
         "expo-widgets",
         {
-          "widgets": ["ObdLiveActivity"]
+          "widgets": []
         }
       ]
     ],
