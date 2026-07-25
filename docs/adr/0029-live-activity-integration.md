@@ -14,16 +14,23 @@ MVP 范围:只显示 水温(coolant)+ STFT + phase 状态。
 1. **用 `expo-widgets`(~57.0.6,Expo 官方 stable)+ `@expo/ui/swift-ui`** 定义
    Live Activity UI。不写 Swift/ActivityKit 原生代码,config plugin 在 prebuild 时
    自动生成 Widget Extension target + Info.plist(`NSSupportsLiveActivities` 等)。
-2. **注入点选 `LiveSessionProvider` 内部**,不另起独立 watcher。Provider 已持有
+2. **Live Activity 不放进 `app.json` 的 `widgets` 数组**。该数组是 home screen
+   widget 配置(每项是 `{ name, displayName, supportedFamilies, ... }` 对象,
+   驱动生成 `Name.swift` 的 `Widget` struct)。Live Activity 用 `createLiveActivity`
+   在 RN 代码定义,运行时通过 app group 共享 layout 字符串,extension target 只承载
+   框架提供的 `WidgetLiveActivity()` 运行时(见生成的 `index.swift`)。
+   正确配置:`plugins: [["expo-widgets", { widgets: [] }]]`(空数组只为触发
+   iOS extension target 生成)。
+3. **注入点选 `LiveSessionProvider` 内部**,不另起独立 watcher。Provider 已持有
    `phase` + `values` 的完整 state + ref 双写,跨 BLE 重连存活。
-3. **数据出口放 `startPolling` 的 `setValues` callback 内**,而非 `useEffect`
+4. **数据出口放 `startPolling` 的 `setValues` callback 内**,而非 `useEffect`
    监听 `values`。callback 内能拿到最新 `next` 值同步推给原生,避免多一跳
    React render + `Record` 浅比较可能漏更新。
-4. **Activity instance ref 化,跨 phase 变化保持**。phase 在 streaming/error
+5. **Activity instance ref 化,跨 phase 变化保持**。phase 在 streaming/error
    间切(grace 期间),activity 不该销毁重建,只 update。
-5. **`finalizeTrip` 是 end 的单一入口**。grace 超时和手动 disconnect 都汇到这里;
+6. **`finalizeTrip` 是 end 的单一入口**。grace 超时和手动 disconnect 都汇到这里;
    grace 期间(20s 重连窗口)不 end,activity 跨重连保持显示最后数据。
-6. **iOS-only**。`useObdActivity` 在 Android 返回 noop(expo-widgets 在 Android
+7. **iOS-only**。`useObdActivity` 在 Android 返回 noop(expo-widgets 在 Android
    无效),避免将来 Blackbox 跑 Android 时崩。
 
 ## 理由
