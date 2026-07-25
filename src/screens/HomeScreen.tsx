@@ -55,7 +55,7 @@ export function HomeScreen() {
   );
 
   return (
-    <Screen title="实时" right={<AskButton />}>
+    <Screen title={process.env.EXPO_PUBLIC_DEMO_MODE === '1' ? '实时 · DEMO' : '实时'} right={<AskButton />}>
       {/* Connection hero */}
       <Card pad={0} style={{ overflow: 'hidden', marginBottom: 14 }}>
         <View style={s.heroRow}>
