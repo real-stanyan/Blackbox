@@ -36,7 +36,7 @@ const GRACE_MS = 20_000;
 const MIN_TRIP_MS = 60_000;
 const MIN_TRIP_SAMPLES = 20;
 
-interface LiveSessionValue {
+export interface LiveSessionValue {
   phase: LivePhase;
   /** UI key → 最新读数 */
   values: Record<string, number>;
@@ -49,7 +49,9 @@ interface LiveSessionValue {
   disconnect: () => Promise<void>;
 }
 
-const Ctx = createContext<LiveSessionValue | null>(null);
+// 导出给 DemoSession 共享:Demo 模式(EXPO_PUBLIC_DEMO_MODE=1)的 DemoSessionProvider
+// 往同一个 context 挂值,useLiveSession 在两种模式下都能找到 Provider。
+export const Ctx = createContext<LiveSessionValue | null>(null);
 
 export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhaseState] = useState<LivePhase>('idle');
