@@ -28,14 +28,20 @@ const THROTTLE_MS = 500;
 
 const isIOS = Platform.OS === 'ios';
 
+// sync 接受的 phase 范围:LiveSession 的 LivePhase 里对 activity 有意义的子集。
+// - 'streaming' → start/update
+// - 'idle' / 'error' → end(行程结束或断连且无 grace)
+// 'scanning' / 'connecting' 不传(LiveSession 不会在过渡态调 sync)。
+export type SyncPhase = ActivityPhase | 'idle';
+
 export interface ObdActivityController {
   /**
    * 同步 phase + 数据到 Live Activity。
    * - phase='streaming' + data → start(首次)或 update(后续)
-   * - phase='idle'/'error' → end(若 instance 还在)
+   * - 其它 phase → end(若 instance 还在)
    * data 为 null 时只用于 end,不更新内容。
    */
-  sync: (phase: ActivityPhase, data: { coolant: number | null; stft: number | null } | null) => void;
+  sync: (phase: SyncPhase, data: { coolant: number | null; stft: number | null } | null) => void;
 }
 
 function noopController(): ObdActivityController {
@@ -57,7 +63,7 @@ export function useObdActivity(): ObdActivityController {
   }, []);
 
   const sync = useCallback(
-    (phase: ActivityPhase, data: { coolant: number | null; stft: number | null } | null) => {
+    (phase: SyncPhase, data: { coolant: number | null; stft: number | null } | null) => {
       if (!isIOS) return;
 
       // 行程结束 → end
