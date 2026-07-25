@@ -27,8 +27,10 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         left: 0, right: 0, bottom: 0,
         borderTopWidth: 0.5,
         borderTopColor: t.barBorder,
-        paddingBottom: insets.bottom,
       },
+      // 玻璃背景须铺到屏幕底缘 —— paddingBottom 放这里,让 BlurView 填满 home
+      // indicator 区;若放在 wrap 上,padding 区透明会露出底层黑色(留出黑缝)。
+      blur: { paddingBottom: insets.bottom },
       row: { flexDirection: 'row' as const, height: 50 },
       tab: {
         flex: 1,
@@ -43,7 +45,8 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   );
   return (
     <View style={s.wrap}>
-      <BlurView intensity={80} tint={t.mode === 'dark' ? 'dark' : 'light'} style={s.row}>
+      <BlurView intensity={80} tint={t.mode === 'dark' ? 'dark' : 'light'} style={s.blur}>
+        <View style={s.row}>
         {state.routes.map((route, i) => {
           const active = state.index === i;
           const meta = TAB_META[route.name];
@@ -63,6 +66,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             </Pressable>
           );
         })}
+        </View>
       </BlurView>
     </View>
   );
