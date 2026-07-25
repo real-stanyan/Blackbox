@@ -10,6 +10,7 @@ import { useTheme } from '../context/Theme';
 import { useTripRecord } from '../hooks/useTrips';
 import { tripToDisplay } from '../data/display';
 import { runAnalysis } from '../analysis/runAnalysis';
+import { ChannelChartCard } from './components/ChannelChartCard';
 import { tripFileUri } from '../data/tripStore';
 import * as Sharing from 'expo-sharing';
 
@@ -61,6 +62,9 @@ export function TripDetailScreen() {
 
   const tr = tripToDisplay(rec);
 
+  // 只画真采到点的通道(features.channels 已按 PIDS 顺序,顺序稳定不随数据抖动)。
+  const charted = rec.features.channels.filter((c) => (rec.series[c.key]?.length ?? 0) >= 2);
+
   const stats: [string, string][] = [
     ['时长', `${tr.dur} 分钟`],
     ['里程', `${tr.dist} km`],
@@ -111,6 +115,20 @@ export function TripDetailScreen() {
           ))}
         </View>
       </Card>
+
+      {charted.length > 0 ? (
+        <>
+          <Text style={s.sectionLabel}>数据曲线</Text>
+          {charted.map((c) => (
+            <ChannelChartCard
+              key={c.key}
+              stat={c}
+              points={rec.series[c.key]}
+              findings={tr.findings.filter((f) => f.channels?.includes(c.key))}
+            />
+          ))}
+        </>
+      ) : null}
 
       <Text style={s.sectionLabel}>AI 分析</Text>
       {tr.analyzed ? (
