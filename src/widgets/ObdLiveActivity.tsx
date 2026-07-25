@@ -8,6 +8,10 @@
 //
 // 消费方(LiveSession)直接 `import obdActivity from './ObdLiveActivity'` 拿到 factory,
 // 调 obdActivity.start(props) / instance.update(props) / instance.end()。
+//
+// ⚠️ 重要:Live Activity 组件函数在 widget extension 进程里以序列化字符串形式执行,
+// 看不到模块作用域的其它函数/变量。所有逻辑必须内联在组件函数体内,不能抽辅助函数。
+// (实测踩坑:把 fmtCoolant/phaseColor 抽到模块顶层 → ReferenceError: Can't find variable)
 
 import { HStack, Text, VStack } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, frame, monospacedDigit, padding } from '@expo/ui/swift-ui/modifiers';
@@ -26,93 +30,78 @@ export interface ObdActivityProps {
   stft: number | null;
 }
 
-// 数字格式化——widget 是 SwiftUI 渲染,不能用 RN 的 toLocaleString。
-const fmtCoolant = (v: number | null) => (v == null ? '–' : String(Math.round(v)));
-const fmtStft = (v: number | null) =>
-  v == null ? '–' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
+// Live Activity 组件——返回各插槽内容。
+// banner = 锁屏 Notifications Center 主体;compact* / minimal / expanded* = 灵动岛。
+// 所有辅助逻辑必须内联在此函数体内(见文件头注释的踩坑说明)。
+function ObdLiveActivity(
+  props: ObdActivityProps,
+  _environment: LiveActivityEnvironment,
+): LiveActivityLayout {
+  'widget';
 
-// 阶段 → 颜色(对齐 src/styles/tokens.ts dark mode:Live Activity 默认在锁屏/灵动岛深色环境)。
-const phaseColor = (p: ActivityPhase) =>
-  p === 'streaming' ? '#30D158' : p === 'connecting' ? '#FF9F0A' : '#FF453A';
-const phaseLabel = (p: ActivityPhase) =>
-  p === 'streaming' ? '记录中' : p === 'connecting' ? '连接中' : '已断连';
+  // 数字格式化(内联,不能抽函数)
+  const fmtCoolant = props.coolant == null ? '–' : String(Math.round(props.coolant));
+  const fmtStft =
+    props.stft == null ? '–' : `${props.stft >= 0 ? '+' : ''}${props.stft.toFixed(1)}`;
 
-// 大数值单元——banner/expanded 用,带 label 上标 + 大号 value + unit。
-function StatCell({
-  label,
-  value,
-  unit,
-  color,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  color: string;
-}) {
-  return (
+  // 阶段 → 颜色(对齐 tokens.ts dark mode)
+  const color =
+    props.phase === 'streaming' ? '#30D158' : props.phase === 'connecting' ? '#FF9F0A' : '#FF453A';
+  const phaseLabel =
+    props.phase === 'streaming' ? '记录中' : props.phase === 'connecting' ? '连接中' : '已断连';
+
+  // 大数值单元(内联,不能抽组件)
+  const statCell = (label: string, value: string, unit: string) => (
     <VStack alignment="leading" spacing={2}>
       <Text modifiers={[font({ size: 11 }), foregroundStyle('gray')]}>{label}</Text>
       <HStack alignment="firstTextBaseline" spacing={2}>
-        <Text modifiers={[font({ weight: 'bold', size: 28 }), monospacedDigit(), foregroundStyle(color)]}>
+        <Text modifiers={[font({ weight: 'bold', size: 28 }), monospacedDigit(), foregroundStyle('white')]}>
           {value}
         </Text>
         <Text modifiers={[font({ size: 13 }), foregroundStyle('gray')]}>{unit}</Text>
       </HStack>
     </VStack>
   );
-}
 
-// Live Activity 组件——返回各插槽内容。
-// banner = 锁屏 Notifications Center 主体;compact* / minimal / expanded* = 灵动岛。
-function ObdLiveActivity(
-  props: ObdActivityProps,
-  _environment: LiveActivityEnvironment,
-): LiveActivityLayout {
-  'widget';
-  const color = phaseColor(props.phase);
   return {
     // 锁屏 widget 主体
     banner: (
       <HStack alignment="center" spacing={12} modifiers={[padding({ all: 14 })]}>
         <VStack alignment="leading" spacing={3}>
           <Text modifiers={[font({ weight: 'bold', size: 12 }), foregroundStyle(color)]}>
-            {phaseLabel(props.phase)}
+            {phaseLabel}
           </Text>
           <Text modifiers={[font({ size: 11 }), foregroundStyle('gray')]}>Blackbox</Text>
         </VStack>
         <HStack alignment="center" spacing={20} modifiers={[frame({ maxWidth: 9999 })]}>
-          <StatCell label="水温" value={fmtCoolant(props.coolant)} unit="°C" color="white" />
-          <StatCell label="STFT" value={fmtStft(props.stft)} unit="%" color="white" />
+          {statCell('水温', fmtCoolant, '°C')}
+          {statCell('STFT', fmtStft, '%')}
         </HStack>
       </HStack>
     ),
     // 灵动岛折叠态:左水温,右 STFT
     compactLeading: (
       <Text modifiers={[font({ weight: 'bold', size: 11 }), monospacedDigit(), foregroundStyle('white')]}>
-        {fmtCoolant(props.coolant)}°
+        {fmtCoolant}°
       </Text>
     ),
     compactTrailing: (
       <Text modifiers={[font({ weight: 'bold', size: 11 }), monospacedDigit(), foregroundStyle('white')]}>
-        {fmtStft(props.stft)}%
+        {fmtStft}%
       </Text>
     ),
     // 灵动岛被挤压到最小时(其它 app 占据了展开位)
     minimal: (
       <Text modifiers={[font({ weight: 'bold', size: 13 }), monospacedDigit(), foregroundStyle(color)]}>
-        {fmtCoolant(props.coolant)}°
+        {fmtCoolant}°
       </Text>
     ),
     // 灵动岛展开态:长按或轻点
-    expandedLeading: (
-      <StatCell label="水温" value={fmtCoolant(props.coolant)} unit="°C" color="white" />
-    ),
-    expandedTrailing: (
-      <StatCell label="STFT" value={fmtStft(props.stft)} unit="%" color="white" />
-    ),
+    expandedLeading: statCell('水温', fmtCoolant, '°C'),
+    expandedTrailing: statCell('STFT', fmtStft, '%'),
     expandedCenter: (
       <Text modifiers={[font({ weight: 'bold', size: 12 }), foregroundStyle(color)]}>
-        {phaseLabel(props.phase)}
+        {phaseLabel}
       </Text>
     ),
   };
