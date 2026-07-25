@@ -1,5 +1,6 @@
 import { Sample } from '../obd/ElmSession';
 import { PIDS } from '../obd/pids';
+import { RULE_THRESHOLDS } from './bands';
 
 export interface ChannelStats {
   key: string;
@@ -74,10 +75,15 @@ export function extractFeatures(samples: Sample[]): TripFeatures {
   const oil = get('oil_temp');
   const ltft = get('ltft_b1');
   const stft = get('stft_b1');
-  if (coolant && coolant.max > 115) ruleAlerts.push({ level: 'red', text: `Coolant peaked at ${coolant.max}°C (>115)` });
-  if (oil && oil.max > 125) ruleAlerts.push({ level: 'red', text: `Oil temp peaked at ${oil.max}°C (>125)` });
-  if (ltft && Math.abs(ltft.mean) > 8) ruleAlerts.push({ level: 'yellow', text: `LTFT mean ${ltft.mean}% (|x|>8)` });
-  if (stft && Math.abs(stft.p95) > 12) ruleAlerts.push({ level: 'yellow', text: `STFT p95 ${stft.p95}% (|x|>12)` });
+  const TH = RULE_THRESHOLDS;
+  if (coolant && coolant.max > TH.coolantMaxC)
+    ruleAlerts.push({ level: 'red', text: `Coolant peaked at ${coolant.max}°C (>${TH.coolantMaxC})` });
+  if (oil && oil.max > TH.oilMaxC)
+    ruleAlerts.push({ level: 'red', text: `Oil temp peaked at ${oil.max}°C (>${TH.oilMaxC})` });
+  if (ltft && Math.abs(ltft.mean) > TH.ltftAbsMean)
+    ruleAlerts.push({ level: 'yellow', text: `LTFT mean ${ltft.mean}% (|x|>${TH.ltftAbsMean})` });
+  if (stft && Math.abs(stft.p95) > TH.stftAbsP95)
+    ruleAlerts.push({ level: 'yellow', text: `STFT p95 ${stft.p95}% (|x|>${TH.stftAbsP95})` });
 
   let warmupToleranceSec: number | null = null;
   const coolantSamples = byKey.get('coolant_temp') ?? [];

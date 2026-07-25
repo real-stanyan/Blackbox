@@ -10,6 +10,7 @@ import { useTheme } from '../context/Theme';
 import { useTripRecord } from '../hooks/useTrips';
 import { tripToDisplay } from '../data/display';
 import { runAnalysis } from '../analysis/runAnalysis';
+import { ChannelChartCard } from './components/ChannelChartCard';
 import { tripFileUri } from '../data/tripStore';
 import * as Sharing from 'expo-sharing';
 
@@ -47,7 +48,8 @@ export function TripDetailScreen() {
       backgroundColor: t.fill, borderRadius: 10, padding: 9,
     },
     actionLabel: { color: t.orange, fontWeight: '700' as const },
-    actionText: { color: t.label, fontSize: 14, lineHeight: 20 },
+    // flex:1 — 少了它 Text 在 row 里不会收缩,长建议直接溢出卡片右边界。
+    actionText: { color: t.label, fontSize: 14, lineHeight: 20, flex: 1 },
     disclaimer: { color: t.label3, fontSize: 12.5, lineHeight: 18, paddingHorizontal: 20, paddingBottom: 8, textAlign: 'center' as const },
   };
 
@@ -60,6 +62,9 @@ export function TripDetailScreen() {
   }
 
   const tr = tripToDisplay(rec);
+
+  // 只画真采到点的通道(features.channels 已按 PIDS 顺序,顺序稳定不随数据抖动)。
+  const charted = rec.features.channels.filter((c) => (rec.series[c.key]?.length ?? 0) >= 2);
 
   const stats: [string, string][] = [
     ['时长', `${tr.dur} 分钟`],
@@ -111,6 +116,20 @@ export function TripDetailScreen() {
           ))}
         </View>
       </Card>
+
+      {charted.length > 0 ? (
+        <>
+          <Text style={s.sectionLabel}>数据曲线</Text>
+          {charted.map((c) => (
+            <ChannelChartCard
+              key={c.key}
+              stat={c}
+              points={rec.series[c.key]}
+              findings={tr.findings.filter((f) => f.channels?.includes(c.key))}
+            />
+          ))}
+        </>
+      ) : null}
 
       <Text style={s.sectionLabel}>AI 分析</Text>
       {tr.analyzed ? (

@@ -9,6 +9,8 @@ export interface Finding {
   title: string;
   detail: string;
   action?: string;
+  /** 这条 finding 指向的 PID key(从 LLM 文本里推断,见 verdict.ts findingChannels)。 */
+  channels?: string[];
 }
 
 export interface Vehicle {
