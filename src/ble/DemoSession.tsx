@@ -15,6 +15,7 @@
 
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { LivePhase, LiveSessionValue } from './LiveSession';
+import { useObdActivity } from '../widgets/useObdActivity';
 
 // 复用 LiveSession 的 context —— 保证 useLiveSession() 在两种模式下都能找到 Provider。
 // 两个 Provider(LiveSessionProvider / DemoSessionProvider)往同一个 Ctx 挂值。
@@ -57,6 +58,10 @@ export function DemoSessionProvider({ children }: { children: ReactNode }) {
   const [distanceKm, setDistanceKm] = useState(0);
   const [error] = useState<string | null>(null);
 
+  // iOS Live Activity —— 必须手动 sync 推数据(ADR-0029)。
+  // useObdActivity 是 imperative API,不是订阅式 hook,跟 LiveSession 一样要主动调。
+  const activity = useObdActivity();
+
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSpeedRef = useRef<{ t: number; v: number } | null>(null);
 
@@ -79,6 +84,11 @@ export function DemoSessionProvider({ children }: { children: ReactNode }) {
       setElapsedSec(elapsed);
       const next = generateSample(elapsed);
       setValues(next);
+      // 推 Live Activity(水温/STFT),跟 LiveSession.startPolling 一致
+      activity.sync('streaming', {
+        coolant: next.coolant ?? null,
+        stft: next.stft ?? null,
+      });
       // 里程积分:按车速 km/h,1s 间隔 → /3600
       if (lastSpeedRef.current) {
         const dt = elapsed - lastSpeedRef.current.t;
@@ -107,6 +117,8 @@ export function DemoSessionProvider({ children }: { children: ReactNode }) {
     setValues({});
     setElapsedSec(0);
     setDistanceKm(0);
+    // 关 Live Activity —— 跟 LiveSession.finalizeTrip 一致
+    activity.sync('idle', null);
   };
 
   const value = useMemo<LiveSessionValue>(
