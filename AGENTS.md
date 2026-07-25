@@ -10,7 +10,7 @@
 - Expo ~57（dev client；Expo Go 跑不了 BLE，必须真机 + `expo run:ios/android --device`）
 - React Native 0.86 / React 19.2 / TypeScript ~6.0
 - react-native-ble-plx（BLE）
-- 无后端、无数据库;行程数据本地持久化(expo-file-system JSON,ADR-0028),导出走 share sheet
+- 无后端、无数据库;行程数据本地持久化(expo-file-system JSON,ADR-0003),导出走 share sheet
 - expo-notifications(本地通知)/ expo-secure-store(API key)/ @react-native-async-storage/async-storage(小型 KV)
 
 ## Hard rules
@@ -20,22 +20,24 @@
 - CX 的 GATT UUID 是 undocumented：运行时发现（notify+write pair），不许硬编码
 - BLE 相关改动不能只靠类型检查/模拟器宣布完成——真机 + 真适配器验证，或在 PR/issue 里明确标注「未经真机验证」
 
-> 协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节的硬规则)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0019)。
+> 协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节的硬规则)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
 
 ## Working agreement (multi-agent)
 
-### On starting a shift（开工三件事）
+### On starting a shift（开工四件事）
 
-1. `git log --oneline -10` — 看最近发生了什么
+1. **先同步再读**：`git fetch origin` + 在本地默认分支上 `git pull --ff-only`——repo 是唯一共享记忆，没 fetch 的本地 clone 是某人的陈旧缓存（ADR-0046）。ff 不动 = 本地默认分支已分叉：停下，开 issue，不在分叉 base 上开工。然后 `git log --oneline -10` — 看最近发生了什么
 2. 查 GitHub Issues — **先找 open 的交接 issue**（上一棒的 Memory 在里面；读完关闭它 = 接手，见 ADR-0005。找不到 → 查最近关闭的 issue 有无「无下一棒」终局声明：有 = 合规终局收工（ADR-0009），正常开工；无 = 上一棒违规收工，开 Protocol gap issue 记录——两种情况都从 git log + open issues 重建上下文），然后看其他 open 任务和备注
 3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
+4. 跑 `~/Github/gearbox/scripts/gearbox-version`（上游路径记在 `.gearbox-version`）自查协议版本 — 落后就 `~/Github/gearbox/scripts/gearbox-update` 回流（pull 触发，gearbox 上游 ADR-0026；本 repo 未拷入该 ADR —— 单人私有下游，pull 触发对它无实质影响 —— 但开工自查这一步仍采纳，见 issue #14）
 
 ### While working
 
 - 小步 commit，message 写清 **why**，不只是 what
+- **协议文件不得 gitignore**：`AGENTS.md`、`CLAUDE.md`、`CONTEXT.md`、`docs/gearbox-adr/`、`docs/adr/`、`.gearbox-version`、`.github/workflows/ci.yml`。repo 是 shift 之间唯一的共享记忆；被 ignore 的协议文件只存在于本地，永远到不了下一个 agent 的 clone（ADR-0037）
 - 一个任务从头到尾一个 agent 做完；交接只发生在任务边界（issue 关闭 / PR 合并），不在任务中间
 - 非 trivial 改动走分支 + PR；typo 级小改可直接进 main
-- 架构性决策写 `docs/adr/`（一个决策一个文件）
+- **项目自有**的架构性决策写 `docs/adr/`（一个决策一个文件，从 0001 起独立编号）；协议 ADR 在 `docs/gearbox-adr/`，由 gearbox 工具管理 —— 不手改
 - 业务术语的定义查 `CONTEXT.md`；新术语出现时补进去
 
 ### Issue & PR 的角色
@@ -79,7 +81,7 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 
 「Gate 命令」的边界(ADR-0010):命令行本身与**放松/删除/改写门禁现有断言** = L1;**新增收紧断言** = L2,随所属 PR 走。纯重构(行为不变)算 L2,举证责任在改的 agent。
 
-**测试型门禁**(本项目 Gate 即此类:tsc,后续可能加 vitest/lint,ADR-0021):配置层直接套上行(收紧配置 L2 / 放松配置 L1 / 命令行 L1);测试内容层按**动机**定级——测试跟随产品代码变更同 PR 增删改 = L2 常规开发;**为绿而删**(删 / `.skip` / 弱化测试而 diff 无对应产品变更)= L1,沉默的 skip = 违规。删/skip 测试必须在 commit message 或 PR body 写明动机。
+**测试型门禁**(本项目 Gate 即此类:tsc,后续可能加 vitest/lint,ADR-0020):配置层直接套上行(收紧配置 L2 / 放松配置 L1 / 命令行 L1);测试内容层按**动机**定级——测试跟随产品代码变更同 PR 增删改 = L2 常规开发;**为绿而删**(删 / `.skip` / 弱化测试而 diff 无对应产品变更)= L1,沉默的 skip = 违规。删/skip 测试必须在 commit message 或 PR body 写明动机。
 
 通用规则(两层都适用):
 
@@ -90,11 +92,11 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 
 **L1/L2 边界判据**(ADR-0012,**机制引用优先**):新增内容只要**引用了 L1/L2 分级 / Hard rules / Working agreement 的机制**(无论是否"可选"、是否动现有文件),按 **L1** 处理。客观判据——文本中出现 `L1` / `L2` / `Hard rule` / `Working agreement` / `分级授权` 等机制关键词,或语义上依赖这些机制运转。
 
-**定义豁免**(ADR-0020):CONTEXT.md 词条**定义**既有机制,三要件缺一不可——仅改 CONTEXT.md、词条注明出处 ADR、不新增义务/不改流程边界——满足则 L2 自主。任一不满足或拿不准 → 按 L1,不许自行豁免;借定义之名改语义 = 违规,revert + 重开 issue。
+**定义豁免**(ADR-0019):CONTEXT.md 词条**定义**既有机制,三要件缺一不可——仅改 CONTEXT.md、词条注明出处 ADR、不新增义务/不改流程边界——满足则 L2 自主。任一不满足或拿不准 → 按 L1,不许自行豁免;借定义之名改语义 = 违规,revert + 重开 issue。
 
 L1 的"明确同意"是 b-弱形态:stanyan 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 stanyan 成为 L1 瓶颈,这个代价接受。
 
-> 本 repo 无下游项目,Gearbox(原名 scaffold,ADR-0016)的下游回流机制(ADR-0013)在此只作接收端:Gearbox 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。
+> 本 repo 无下游项目,Gearbox(原名 scaffold,ADR-0015)的下游回流机制(ADR-0013)在此只作接收端:Gearbox 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。
 
 ### Gate（门禁 — 收工前必须全绿）
 
@@ -102,7 +104,7 @@ L1 的"明确同意"是 b-弱形态:stanyan 在会话里说"同意"或在 PR com
 npx tsc --noEmit
 ```
 
-> V0 无测试套件,类型检查是当前唯一可自动化的断言(理由与升级路径见 ADR-0014)。BLE 行为的验收靠真机 + 真适配器(见 README「Success criteria」与 Hard rules 最后一条),CI 断言不了。
+> V0 无测试套件,类型检查是当前唯一可自动化的断言(理由与升级路径见 ADR-0001)。BLE 行为的验收靠真机 + 真适配器(见 README「Success criteria」与 Hard rules 最后一条),CI 断言不了。
 
 CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
@@ -121,7 +123,8 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 - `README.md` — V0 范围、运行方式、验收标准、已知风险
 - `CONTEXT.md` — 领域词汇表（OBD/BLE 术语）
-- `docs/adr/` — 架构决策记录（0001–0013 随 Gearbox(原名 scaffold)引入,0014 为本项目自有,0015–0024 为上游回流拷贝）
+- `docs/gearbox-adr/` — 协议 ADR（工具管理，与 gearbox 上游 1:1 编号；不手改）
+- `docs/adr/` — 项目自有架构决策记录（从 0001 起独立编号）
 - `src/ble/` — BLE 扫描/连接/GATT 发现/串行通道
 - `src/obd/` — ELM327/STN 初始化与 Mode 01 PID 轮询
 - `src/analysis/` — 数据分析（`scripts/test-analysis.ts` 可离线跑）
