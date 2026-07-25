@@ -34,13 +34,21 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["central"],
+          "modes": [
+            "central"
+          ],
           "bluetoothAlwaysPermission": "Connects to your OBDLink CX adapter to read engine data."
         }
       ],
       "expo-sharing",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-widgets",
+        {
+          "widgets": ["ObdLiveActivity"]
+        }
+      ]
     ],
     "extra": {
       "eas": {
