@@ -48,7 +48,8 @@ export function TripDetailScreen() {
       backgroundColor: t.fill, borderRadius: 10, padding: 9,
     },
     actionLabel: { color: t.orange, fontWeight: '700' as const },
-    actionText: { color: t.label, fontSize: 14, lineHeight: 20 },
+    // flex:1 — 少了它 Text 在 row 里不会收缩,长建议直接溢出卡片右边界。
+    actionText: { color: t.label, fontSize: 14, lineHeight: 20, flex: 1 },
     disclaimer: { color: t.label3, fontSize: 12.5, lineHeight: 18, paddingHorizontal: 20, paddingBottom: 8, textAlign: 'center' as const },
   };
 
