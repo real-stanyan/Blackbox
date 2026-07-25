@@ -13,6 +13,7 @@ import { TripRecord } from '../data/types';
 import { notifyConnected, notifyDisconnected } from '../notifications/notify';
 import { runAnalysis } from '../analysis/runAnalysis';
 import { setVehicle } from '../data/settingsStore';
+import { useObdActivity } from '../widgets/useObdActivity';
 
 export type LivePhase = 'idle' | 'scanning' | 'connecting' | 'streaming' | 'error';
 
@@ -56,6 +57,9 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [distanceKm, setDistanceKm] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // iOS Live Activity(灵动岛 + 锁屏 widget)— 推水温/STFT 实时数据,ADR-0029
+  const activity = useObdActivity();
 
   const phaseRef = useRef<LivePhase>('idle');
   const transportRef = useRef<BleTransport | null>(null);
@@ -117,6 +121,9 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     setValues({});
     setElapsedSec(0);
     setDistanceKm(0);
+    // 关 Live Activity —— 行程结束(无论合格与否),用户已下车。
+    // 注意:fail() 进 grace 期间不调 finalizeTrip,activity 跨重连保持。
+    activity.sync('idle', null);
     if (!trip) return;
     const endedAt = Date.now();
     const durMs = endedAt - trip.startedAt;
@@ -148,7 +155,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
         console.log(`[trip] 落盘失败: ${e}`);
         if (notify) void notifyDisconnected(null);
       });
-  }, []);
+  }, [activity.sync]);
 
   const clearReconnect = () => {
     if (reconnectTimerRef.current) {
@@ -221,7 +228,17 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
               // Sample.t 是 ElmSession 起算 — 重连会归零。行程内统一改用行程起算。
               const tripSample: Sample = { ...sample, t: Date.now() - trip.startedAt };
               trip.samples.push(tripSample);
-              setValues((prev) => ({ ...prev, [OBD_TO_UI[sample.key] ?? sample.key]: sample.value }));
+              const uiKey = OBD_TO_UI[sample.key] ?? sample.key;
+              setValues((prev) => {
+                const next = { ...prev, [uiKey]: sample.value };
+                // 推 Live Activity:只关心 coolant/stft。在 setValues callback 内
+                // 同步取最新值(避免 useEffect 监听 values 多一跳 + 浅比较漏更新)。
+                activity.sync('streaming', {
+                  coolant: next.coolant ?? null,
+                  stft: next.stft ?? null,
+                });
+                return next;
+              });
               if (sample.key === 'speed') {
                 if (lastSpeed) {
                   const dtH = (tripSample.t - lastSpeed.t) / 3_600_000;
@@ -239,7 +256,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
         }
       })();
     },
-    [fail],
+    [fail, activity.sync],
   );
 
   const connect = useCallback(() => {
