@@ -1,4 +1,4 @@
-# 0029 — Live Activity 集成:expo-widgets + Provider 内注入
+# 0004 — Live Activity 集成:expo-widgets + Provider 内注入
 
 日期: 2026-07-25
 状态: 已接受(L2 — 新功能,不改协议)

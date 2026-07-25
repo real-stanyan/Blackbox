@@ -1,4 +1,4 @@
-# ADR-0014: 接入 AGENTS.md scaffold 协议,门禁定为 `npx tsc --noEmit`
+# ADR-0001: 接入 AGENTS.md scaffold 协议,门禁定为 `npx tsc --noEmit`
 
 - Date: 2026-07-19
 - Status: accepted
