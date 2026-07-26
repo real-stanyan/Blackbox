@@ -10,6 +10,8 @@
 - Expo ~57（dev client；Expo Go 跑不了 BLE，必须真机 + `expo run:ios/android --device`）
 - React Native 0.86 / React 19.2 / TypeScript ~6.0
 - react-native-ble-plx（BLE）
+- react-native-svg（图表；CarPlay 格子图靠它的 `toDataURL()` 光栅化成 PNG）
+- @iternio/react-native-auto-play + react-native-nitro-modules（CarPlay Driving Task；选它的理由与另两个候选的淘汰原因见 ADR-0006）
 - 无后端、无数据库;行程数据本地持久化(expo-file-system JSON,ADR-0003),导出走 share sheet
 - expo-notifications(本地通知)/ expo-secure-store(API key)/ @react-native-async-storage/async-storage(小型 KV)
 
@@ -128,3 +130,6 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 - `src/ble/` — BLE 扫描/连接/GATT 发现/串行通道
 - `src/obd/` — ELM327/STN 初始化与 Mode 01 PID 轮询
 - `src/analysis/` — 数据分析（`scripts/test-analysis.ts` 可离线跑）
+- `src/carplay/` — CarPlay 仪表盘（Grid 八格；几何层纯函数，`scripts/test-carplay-tile.ts` 可离线跑 + 出 SVG 肉眼验收）
+- `plugins/` — 自写的 Expo config plugin（原生配置；`npx expo config --type introspect` 可验证注入结果）
+- `docs/prototypes/` — 交互式设计原型（HTML，浏览器直开；方案定稿前的对照物）

@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blackbox · CarPlay 密集仪表盘方案</title>
+<style>
+  :root{
+    --page-bg:#14110E; --page-ink:#EFE9E1;
+    --page-ink2:rgba(239,233,225,.58); --page-ink3:rgba(239,233,225,.30);
+    --page-line:rgba(239,233,225,.14);
+    --rust:#EA5B2A; --ok:#30D158; --warn:#FF9F0A; --bad:#FF453A;
+    --serif: ui-serif, "Songti SC", Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --cp: -apple-system, "PingFang SC", system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--page-bg);color:var(--page-ink);font:15px/1.6 var(--cp);
+       -webkit-font-smoothing:antialiased;padding:40px 32px 80px}
+  .wrap{max-width:1560px;margin:0 auto}
+
+  header{border-bottom:1px solid var(--page-line);padding-bottom:22px;margin-bottom:24px}
+  h1{font-family:var(--serif);font-size:33px;line-height:1.25;font-weight:600;margin:0 0 10px;text-wrap:pretty}
+  .sub{color:var(--page-ink2);font-size:14.5px;max-width:82ch;margin:0;text-wrap:pretty}
+  .sub b{color:var(--page-ink);font-weight:600}
+  .note{margin-top:18px;padding:13px 17px;border-left:2px solid var(--rust);
+        background:rgba(234,91,42,.07);font-size:14px;line-height:1.65;max-width:92ch;text-wrap:pretty}
+  .note code{font-family:var(--mono);font-size:12.5px;color:var(--rust)}
+
+  .bar{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end;margin:24px 0 20px}
+  .grp{display:flex;flex-direction:column;gap:7px}
+  .grp>span{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--page-ink3)}
+  .seg{display:flex;border:1px solid var(--page-line);border-radius:2px;overflow:hidden}
+  .seg button{appearance:none;border:0;background:transparent;cursor:pointer;color:var(--page-ink2);
+    font:13px/1 var(--cp);padding:9px 14px;border-right:1px solid var(--page-line);
+    transition:background .12s,color .12s;white-space:nowrap}
+  .seg button:last-child{border-right:0}
+  .seg button:hover{color:var(--page-ink);background:rgba(239,233,225,.05)}
+  .seg button[aria-pressed="true"]{background:var(--rust);color:#fff}
+  .seg button .k{font-family:var(--mono);font-size:11px;opacity:.62;margin-right:6px;font-style:normal}
+  .seg button.warnopt[aria-pressed="true"]{background:var(--bad)}
+
+  .stage{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:42px;align-items:start}
+  @media (max-width:1300px){.stage{grid-template-columns:minmax(0,1fr)}}
+  .screenwrap{display:flex;flex-direction:column;gap:11px;align-items:flex-start;min-width:0;overflow:hidden}
+  .screenscale{transform-origin:top left}
+  .caption{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--page-ink3)}
+
+  /* ---------------- CarPlay 屏 ---------------- */
+  .cp{background:#000;color:#fff;position:relative;overflow:hidden;
+      font-family:var(--cp);display:flex;flex-direction:column;
+      box-shadow:0 26px 70px rgba(0,0,0,.62)}
+  .sysbar{height:42px;display:flex;align-items:center;justify-content:space-between;
+          padding:0 18px;font-size:15px;color:rgba(255,255,255,.9);flex:0 0 auto}
+  .sysbar .r{color:rgba(255,255,255,.5);font-size:13px}
+  .navbar{height:60px;display:flex;align-items:center;padding:0 20px;
+          border-bottom:1px solid rgba(255,255,255,.13);flex:0 0 auto}
+  .navbar .t{font-size:22px;font-weight:600}
+  .navbar .btn{margin-left:auto;font-size:16px;color:#0A84FF;
+               border:1px solid rgba(10,132,255,.4);border-radius:7px;padding:6px 13px}
+  .tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.13);flex:0 0 auto}
+  .tabs div{padding:12px 24px;font-size:17px;color:rgba(255,255,255,.5);border-bottom:3px solid transparent}
+  .tabs div.on{color:#fff;border-bottom-color:#0A84FF}
+  .appzone{flex:1 1 auto;overflow:hidden;position:relative}
+
+  .cp[data-zones="1"] .sysbar,.cp[data-zones="1"] .navbar,.cp[data-zones="1"] .tabs{
+    outline:1px dashed rgba(255,69,58,.75);outline-offset:-1px}
+  .cp[data-zones="1"] .appzone{outline:1px dashed rgba(48,209,88,.7);outline-offset:-1px}
+  /* 只有 tile 里的像素是 app 真正能画的 */
+  .cp[data-zones="1"] canvas.tile{outline:1px solid rgba(48,209,88,.9);outline-offset:2px}
+
+  /* Grid 密集版 —— 系统负责摆位，app 只给图 + 一行 title */
+  .cpgrid{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(2,1fr);
+          height:100%;padding:10px 12px}
+  .cpgrid .cell{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+  .cpgrid .cap{font-size:14px;color:rgba(255,255,255,.72);text-align:center;line-height:1.2;
+               max-width:96%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gapnote{position:absolute;pointer-events:none;inset:0}
+
+  /* List 混排版 */
+  .list .row{display:flex;align-items:center;gap:16px;padding:0 20px;height:88px;
+             border-bottom:1px solid rgba(255,255,255,.09)}
+  .list .noimg{width:0;flex:0 0 0}
+  .list .txt{flex:1;min-width:0}
+  .list .txt .a{font-size:20px;font-weight:500}
+  .list .txt .b{font-size:15px;color:rgba(255,255,255,.55);margin-top:2px}
+  .list .val{font-size:27px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+  .list .val small{font-size:14px;font-weight:400;color:rgba(255,255,255,.5);margin-left:4px}
+  .list .chev{color:rgba(255,255,255,.3);font-size:21px}
+
+  /* Information 版 */
+  .info .row{display:flex;align-items:baseline;justify-content:space-between;padding:0 22px;
+             height:54px;border-bottom:1px solid rgba(255,255,255,.09)}
+  .info .k{font-size:18px;color:rgba(255,255,255,.62)}
+  .info .v{font-size:25px;font-weight:600;font-variant-numeric:tabular-nums}
+  .info .v small{font-size:14px;font-weight:400;color:rgba(255,255,255,.5);margin-left:5px}
+  .info .acts{display:flex;gap:13px;padding:15px 22px}
+  .info .acts button{flex:1;appearance:none;border:0;border-radius:9px;padding:14px 0;
+                     background:rgba(255,255,255,.15);color:#fff;font:600 17px var(--cp)}
+
+  /* 自绘参考版 —— 明确标注不可实现 */
+  .freeform{height:100%;padding:12px 14px;display:grid;gap:8px;
+            grid-template-columns:repeat(3,1fr);grid-template-rows:auto 1fr 1fr}
+  .freeform .strip{grid-column:1/-1;display:flex;gap:22px;align-items:center;
+                   padding:9px 14px;background:rgba(255,255,255,.05);border-radius:8px}
+  .freeform .strip .kv{display:flex;flex-direction:column;line-height:1.15}
+  .freeform .strip .kv i{font-style:normal;font-size:11px;color:rgba(255,255,255,.45)}
+  .freeform .strip .kv b{font-size:19px;font-variant-numeric:tabular-nums}
+  .freeform .pane{background:rgba(255,255,255,.05);border-radius:8px;padding:9px 11px;
+                  display:flex;flex-direction:column;min-height:0}
+  .freeform .pane .hd{display:flex;align-items:baseline;gap:7px}
+  .freeform .pane .hd .nm{font-size:13px;color:rgba(255,255,255,.62)}
+  .freeform .pane .hd .vv{margin-left:auto;font-size:25px;font-weight:600;font-variant-numeric:tabular-nums}
+  .freeform .pane .hd .vv small{font-size:12px;font-weight:400;color:rgba(255,255,255,.5);margin-left:3px}
+  .freeform .pane canvas{flex:1;min-height:0;width:100%}
+  .banner{position:absolute;top:0;left:0;right:0;background:rgba(255,69,58,.92);color:#fff;
+          font:600 13px var(--cp);padding:7px 14px;letter-spacing:.02em;z-index:5;text-align:center}
+
+  /* ---------------- 说明栏 ---------------- */
+  aside .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+             color:var(--rust);display:block;margin-bottom:12px}
+  aside h2{font-family:var(--serif);font-size:21px;font-weight:600;margin:0 0 10px}
+  aside p{font-size:14px;line-height:1.68;color:var(--page-ink2);text-wrap:pretty}
+  aside p b{color:var(--page-ink);font-weight:600}
+  .facts{list-style:none;padding:0;margin:18px 0 0;border-top:1px solid var(--page-line)}
+  .facts li{display:grid;grid-template-columns:72px 1fr;gap:13px;padding:10px 0;
+            border-bottom:1px solid var(--page-line);font-size:13.5px;line-height:1.55;
+            color:var(--page-ink2);text-wrap:pretty}
+  .facts .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+              color:var(--page-ink3);padding-top:3px}
+  .facts .good{color:var(--ok)} .facts .bad{color:var(--bad)} .facts .warn{color:var(--warn)}
+
+  .zoom{margin-top:24px;padding-top:19px;border-top:1px solid var(--page-line);
+        display:flex;gap:15px;align-items:flex-start}
+  .zoom[hidden]{display:none}
+  .zoom canvas{border-radius:9px;background:#000;flex:0 0 auto}
+  .zoom .lbl{font-size:12.5px;line-height:1.55;color:var(--page-ink3);text-wrap:pretty}
+  .zoom .lbl b{color:var(--page-ink2)}
+
+  .budget{margin-top:24px;padding:15px 17px;border:1px solid var(--page-line)}
+  .budget .h{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+             color:var(--page-ink3);margin-bottom:11px}
+  .budget table{width:100%;border-collapse:collapse;font-size:13px}
+  .budget td{padding:4px 0;color:var(--page-ink2)}
+  .budget td:last-child{text-align:right;font-family:var(--mono);font-size:12px;color:var(--page-ink)}
+  .budget tr.tot td{border-top:1px solid var(--page-line);padding-top:8px;color:var(--page-ink)}
+  .budget tr.tot td:last-child{color:var(--rust)}
+
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--page-line);
+         font-size:12.5px;color:var(--page-ink3);line-height:1.8;max-width:100ch;text-wrap:pretty}
+  footer code{font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>把数据铺开 —— CarPlay 上能做到多密</h1>
+  <p class="sub">
+    Dashboard 的目标是<b>单位面积信息量</b>。CarPlay Driving Task 的天花板由一件事决定：
+    <b>app 唯一能控制的像素，是模板允许的那几张图片。</b>其余全归 iOS。
+    所以「铺开」这件事只有一条路 —— <b>Grid 八格，每格塞一张自绘的密集面板</b>。
+    数值走项目自带 <b>DemoSession.generateSample()</b>，阈值取自 <b>src/analysis/bands.ts</b>。
+  </p>
+  <div class="note">
+    格子图片的尺寸上限是<b>运行时属性</b> <code>CPGridTemplate.maximumGridButtonImageSize</code>，
+    Apple 未公开固定值，随车机 scale（2x / 3x）变化 —— 所以下面把 tile 尺寸做成可切换的，
+    别拿一个猜出来的数当结论。
+    另一条已知坑：<b>iOS 26 之前 Grid 有布局 bug</b>，4–6 个按钮会挤成一行而不是网格，iOS 26 beta 6 才修。
+  </div>
+</header>
+
+<div class="bar">
+  <div class="grp">
+    <span>方案</span>
+    <div class="seg" id="segVariant">
+      <button data-variant="E" aria-pressed="true"><i class="k">E</i>Grid 八格 · 密集面板</button>
+      <button data-variant="D" aria-pressed="false"><i class="k">D</i>List 混排</button>
+      <button data-variant="A" aria-pressed="false"><i class="k">A</i>Information 纯文字</button>
+      <button class="warnopt" data-variant="X" aria-pressed="false"><i class="k">X</i>自绘参考 · 做不到</button>
+    </div>
+  </div>
+  <div class="grp">
+    <span>格子图尺寸</span>
+    <div class="seg" id="segTile">
+      <button data-t="120" aria-pressed="false">120 px</button>
+      <button data-t="176" aria-pressed="true">176 px</button>
+      <button data-t="240" aria-pressed="false">240 px</button>
+    </div>
+  </div>
+  <div class="grp">
+    <span>车机分辨率</span>
+    <div class="seg" id="segSize">
+      <button data-w="800"  data-h="480" aria-pressed="false">800×480</button>
+      <button data-w="1280" data-h="720" aria-pressed="true">1280×720</button>
+      <button data-w="1920" data-h="720" aria-pressed="false">1920×720</button>
+    </div>
+  </div>
+  <div class="grp">
+    <span>叠加层</span>
+    <div class="seg" id="segZones">
+      <button data-z="0" aria-pressed="true">关</button>
+      <button data-z="1" aria-pressed="false">标出 app 可画区</button>
+    </div>
+  </div>
+  <div class="grp">
+    <span>数据</span>
+    <div class="seg" id="segRun">
+      <button data-r="1" aria-pressed="true">跑起来</button>
+      <button data-r="0" aria-pressed="false">暂停</button>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="screenwrap">
+    <div class="screenscale" id="scaler">
+      <div class="cp" id="cp" data-zones="0">
+        <div class="sysbar"><span id="clock">9:41</span><span class="r">Blackbox</span></div>
+        <div id="chrome"></div>
+        <div class="appzone" id="appzone"></div>
+      </div>
+    </div>
+    <div class="caption" id="cap"></div>
+  </div>
+
+  <aside>
+    <span class="tag" id="asideTag"></span>
+    <h2 id="asideTitle"></h2>
+    <p id="asideBody"></p>
+    <ul class="facts" id="asideFacts"></ul>
+
+    <div class="zoom" id="zoomRow">
+      <canvas id="zoomCanvas" width="600" height="600" style="width:200px;height:200px"></canvas>
+      <div class="lbl" id="zoomLbl"></div>
+    </div>
+
+    <div class="budget" id="budgetBox">
+      <div class="h">像素预算 · app 能画多少</div>
+      <table id="budgetTable"></table>
+    </div>
+  </aside>
+</div>
+
+<footer>
+  <b>保真度</b>：CarPlay 的确切 padding / 字号 / 网格间距由 iOS 私有渲染，Apple 未公开像素规范。
+  这里按 HIG 的可视比例还原 —— <b>结构、层级、能塞多少信息、图片占屏幕多少</b>是准的，
+  确切留白与字号上车会有偏差。<br>
+  <b>已核实的模板上限</b>：<code>CPGridTemplateMaximumItems</code> = 8（超出的按钮被忽略，需分页或多模板）·
+  List ≤ 24 行 / ≤ 50 段 · Information 最多 3 个 action ·
+  <code>maximumGridButtonImageSize</code> / <code>CPListItem.maximumImageSize</code> 运行时读，不硬编码。<br>
+  <b>未验证，必须上车</b>：动态 PNG 的刷新频率上限 · 混排 list 里无图行是否仍保留图片槽位 ·
+  iOS 26 之前的 Grid 布局 bug 在你的车机固件上是否存在。
+</footer>
+
+</div>
+
+<script>
+/* ==========================================================
+   数据源：照搬 src/ble/DemoSession.tsx 的 generateSample()
+   ========================================================== */
+function generateSample(t){
+  const coolant = 25 + (90 - 25) * (1 - Math.exp(-t / 180));
+  const stftBase = Math.sin(t / 3) * 4 + (Math.random() - 0.5) * 6;
+  const stftSpike = Math.sin(t / 20) > 0.95 ? Math.sin(t / 2) * 12 : 0;
+  const stft = Math.max(-20, Math.min(20, stftBase + stftSpike));
+  const rpm = Math.round(700 + Math.abs(Math.sin(t / 8)) * 2500 + (Math.random() - 0.5) * 200);
+  const speedRaw = Math.sin(t / 10) * 40 + (Math.random() - 0.5) * 10;
+  const speed = Math.max(0, Math.round(speedRaw));
+  const ltft = Math.sin(t / 60) * 3 + (Math.random() - 0.5) * 0.5;
+  const oil = Math.min(110, coolant + 10 + Math.sin(t / 30) * 3);
+  return { rpm, speed, coolant, oil, stft, ltft };
+}
+
+/* 阈值：src/analysis/bands.ts。null = 该侧无可辩护阈值，不画带 */
+const BANDS = {
+  coolant:{min:null,max:115}, oil:{min:null,max:125},
+  stft:{min:-12,max:12},      ltft:{min:-8,max:8},
+  rpm:null, speed:null,
+};
+
+const CHANNELS = [
+  { key:'coolant', label:'水温',       short:'水温', unit:'°C',   dec:0, axis:[20,130], mode:'spark',
+    why:'暖机爬升曲线 + 峰值是否破 115' },
+  { key:'oil',     label:'机油温度',    short:'机油', unit:'°C',   dec:0, axis:[20,140], mode:'spark',
+    why:'同水温，看爬升与峰值（车型未提供时为空）' },
+  { key:'stft',    label:'短期燃油修正', short:'短修', unit:'%',    dec:1, axis:[-20,20], mode:'spark',
+    why:'尖峰有没有冲出 ±12 —— 尖峰就是全部信息' },
+  { key:'ltft',    label:'长期燃油修正', short:'长修', unit:'%',    dec:1, axis:[-12,12], mode:'bar',
+    why:'漂移以分钟计，看的是落在 ±8 的哪个位置' },
+  { key:'rpm',     label:'转速',        short:'转速', unit:'rpm',  dec:0, axis:[0,4000],  mode:'spark',
+    why:'无阈值，但趋势能看出换挡与拉高转' },
+  { key:'speed',   label:'车速',        short:'车速', unit:'km/h', dec:0, axis:[0,120],   mode:'plain',
+    why:'仪表盘上本来就有，只留数值' },
+];
+
+const HISTORY = 72;
+const hist = {}; CHANNELS.forEach(c => hist[c.key] = []);
+const peak = {}; CHANNELS.forEach(c => peak[c.key] = -Infinity);
+
+const state = { variant:'E', tile:176, w:1280, h:720, zones:0, running:true, t:0, latest:{} };
+
+const outOfBand = (v,b) => !b ? false
+  : (b.max!==null && v>b.max) || (b.min!==null && v<b.min);
+function statusColor(key,v){
+  const b = BANDS[key];
+  if (v===undefined) return '#8E8E93';
+  if (!b) return '#8E8E93';
+  if (outOfBand(v,b)) return '#FF453A';
+  if (b.max!==null && v > b.max*0.92) return '#FF9F0A';
+  return '#30D158';
+}
+const fmt = (c,v) => v===undefined ? '—' : v.toFixed(c.dec);
+
+/* 选定的格子尺寸未必放得下 —— 800×480 上四列 240px 就超宽。
+   按屏幕实际可用空间收敛，收敛了就在 caption 里说明，
+   不让 demo 展示一个真机上做不到的配置。 */
+function effTile(){
+  const padX = 12*2, padY = 10*2;
+  const zoneW = state.w - padX;
+  const zoneH = state.h - 42 /*sysbar*/ - 60 /*navbar*/ - padY;
+  const byW = Math.floor(zoneW/4) - 14;              // 4 列 + 格间留白
+  const byH = Math.floor(zoneH/2) - 20 - 9;          // 2 行 − title 行 − gap
+  return Math.max(72, Math.min(state.tile, byW, byH));
+}
+
+/* 峰值口径：双侧阈值(±类)取最大绝对偏移 —— 与 bands.ts 里 stftAbsP95 /
+   ltftAbsMean 用绝对值的口径一致；单侧阈值取最大值。 */
+function peakMetric(key, v){
+  const b = BANDS[key];
+  return (b && b.min !== null) ? Math.abs(v) : v;
+}
+
+/* 余量 = 离最近一条阈值边还差多少。±类通道不能只算上边界 ——
+   短修在 −3.1 时离 −12 只剩 8.9，离 +12 还有 15.1，报大的那个是误导。
+   负值 = 已越界，越界多少。 */
+function headroom(key, v){
+  const b = BANDS[key];
+  if (!b || v === undefined) return null;
+  const d = [];
+  if (b.max !== null) d.push(b.max - v);
+  if (b.min !== null) d.push(v - b.min);
+  return d.length ? Math.min.apply(null, d) : null;
+}
+const F = (s,w) => (w||'400')+' '+s+'px -apple-system, "PingFang SC", system-ui';
+
+/* ==========================================================
+   密集 tile —— 一格塞 5 条信息：通道名 / 状态点 / 大数值 /
+   走势(带正常区间) / 峰值与阈值。小尺寸时按层级降级。
+   ========================================================== */
+function drawTile(cv, c, S){
+  const dpr = 3;
+  if (cv.width !== S*dpr){ cv.width = S*dpr; cv.height = S*dpr; }
+  cv.style.width = S+'px'; cv.style.height = S+'px';
+  const g = cv.getContext('2d');
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,S,S);
+
+  const v = state.latest[c.key];
+  const band = BANDS[c.key];
+  const col = statusColor(c.key, v);
+  const tier = S >= 200 ? 3 : S >= 150 ? 2 : 1;   // 3 = 全量，1 = 只留数值+走势
+
+  // 背板
+  g.fillStyle = 'rgba(255,255,255,.055)';
+  roundRect(g, 0,0,S,S, S*0.09); g.fill();
+  // 状态色左侧竖条 —— 不用整块染色，避免行车中一片红晃眼
+  g.fillStyle = col;
+  roundRect(g, 0, S*0.14, 3, S*0.72, 1.5); g.fill();
+
+  const pad = S*0.085;
+  let y = pad;
+
+  // 1) 阈值 + 状态点。通道名不画 —— 系统已经在格子下面渲染 title 了，
+  //    重复一遍等于白占一行。这行改放阈值，密度才不浪费。
+  if (tier >= 2){
+    g.textAlign='left'; g.textBaseline='top';
+    g.fillStyle='rgba(255,255,255,.42)'; g.font = F(Math.round(S*0.082));
+    g.fillText(band ? (band.min===null ? '≤ '+band.max : '± '+band.max) : '无阈值', pad+5, y);
+    g.fillStyle=col;
+    g.beginPath(); g.arc(S-pad, y+S*0.042, S*0.028, 0, Math.PI*2); g.fill();
+    y += S*0.135;
+  }
+
+  // 2) 大数值 + 单位
+  g.textAlign='left'; g.textBaseline='alphabetic';
+  const vs = Math.round(S * (tier>=2 ? 0.235 : 0.28));
+  g.fillStyle='#fff'; g.font = F(vs,'600');
+  const txt = fmt(c,v);
+  g.fillText(txt, pad+5, y+vs*0.86);
+  const tw = g.measureText(txt).width;
+  g.fillStyle='rgba(255,255,255,.45)'; g.font = F(Math.round(S*0.082));
+  g.fillText(c.unit, pad+9+tw, y+vs*0.86);
+  y += vs*1.06;
+
+  // 3) 走势 / 区间条
+  const chH = S*(tier>=3 ? 0.30 : tier===2 ? 0.34 : 0.40);
+  if (c.mode === 'bar') drawBarInto(g, c, v, band, pad+5, y, S-pad*2-5, chH, col);
+  else                  drawSparkInto(g, c, band, pad+5, y, S-pad*2-5, chH);
+  y += chH;
+
+  // 4) 峰值 + 余量 —— 只有大尺寸放得下。
+  //    余量 = 离阈值还差多少，比再报一遍阈值有用。
+  if (tier >= 3){
+    g.textBaseline='alphabetic'; g.font = F(Math.round(S*0.072));
+    g.fillStyle='rgba(255,255,255,.40)'; g.textAlign='left';
+    const pk = peak[c.key];
+    g.fillText(isFinite(pk) ? '峰 '+pk.toFixed(c.dec) : '峰 —', pad+5, S-pad*0.7);
+    g.textAlign='right';
+    const head = headroom(c.key, v);
+    if (head !== null){
+      g.fillStyle = head < 0 ? '#FF453A' : 'rgba(255,255,255,.40)';
+      g.fillText('余 '+head.toFixed(c.dec), S-pad, S-pad*0.7);
+    } else {
+      g.fillText('—', S-pad, S-pad*0.7);
+    }
+  }
+}
+
+function roundRect(g,x,y,w,h,r){
+  g.beginPath();
+  g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath();
+}
+
+/* 走势：正常区间画绿带，越界线段转红（同 TripChart） */
+function drawSparkInto(g, c, band, X0, Y0, W, H){
+  const data = hist[c.key];
+  const [lo,hi] = c.axis;
+  const X = i => X0 + (i/(HISTORY-1))*W;
+  const Y = v => Y0 + H - ((v-lo)/(hi-lo))*H;
+
+  if (band){
+    const top = band.max!==null ? Y(band.max) : Y0;
+    const bot = band.min!==null ? Y(band.min) : Y0+H;
+    g.fillStyle='rgba(48,209,88,.15)';
+    g.fillRect(X0, Math.max(Y0,top), W, Math.min(Y0+H,bot)-Math.max(Y0,top));
+  } else {
+    g.fillStyle='rgba(255,255,255,.04)';
+    g.fillRect(X0,Y0,W,H);
+  }
+  if (data.length < 2) return;
+
+  g.save(); g.beginPath(); g.rect(X0,Y0-1,W,H+2); g.clip();
+  g.lineWidth = Math.max(1.4, H*0.055); g.lineJoin='round'; g.lineCap='round';
+  const off = HISTORY - data.length;
+  for (let i=1;i<data.length;i++){
+    const a=data[i-1], b=data[i];
+    const bad = outOfBand(a,band) || outOfBand(b,band);
+    g.strokeStyle = bad ? '#FF453A' : 'rgba(255,255,255,.86)';
+    g.beginPath(); g.moveTo(X(i-1+off),Y(a)); g.lineTo(X(i+off),Y(b)); g.stroke();
+  }
+  g.restore();
+
+  const last = data[data.length-1];
+  g.fillStyle = outOfBand(last,band) ? '#FF453A' : '#fff';
+  g.beginPath(); g.arc(X(HISTORY-1), Y(last), Math.max(1.6,H*0.075), 0, Math.PI*2); g.fill();
+}
+
+/* 区间条：回答「离阈值边还有多远」，给漂移极慢的通道用 */
+function drawBarInto(g, c, v, band, X0, Y0, W, H, col){
+  const [lo,hi] = c.axis;
+  const x = t => X0 + Math.max(0,Math.min(1,(t-lo)/(hi-lo)))*W;
+  const cy = Y0 + H*0.46, bh = Math.max(7, H*0.34);
+
+  g.fillStyle='rgba(255,255,255,.13)'; g.fillRect(X0, cy-bh/2, W, bh);
+  if (band){
+    const a = band.min!==null ? x(band.min) : X0;
+    const b = band.max!==null ? x(band.max) : X0+W;
+    g.fillStyle='rgba(48,209,88,.34)'; g.fillRect(a, cy-bh/2, b-a, bh);
+  }
+  if (lo<0 && hi>0){ g.fillStyle='rgba(255,255,255,.3)'; g.fillRect(x(0)-0.5, cy-bh/2-3, 1, bh+6); }
+  if (v!==undefined){
+    g.fillStyle=col; g.beginPath(); g.arc(x(v), cy, bh*0.52, 0, Math.PI*2); g.fill();
+    g.strokeStyle='#000'; g.lineWidth=1.4; g.stroke();
+  }
+}
+
+/* ==========================================================
+   四个方案的 DOM
+   ========================================================== */
+function renderChrome(){
+  const ch = document.getElementById('chrome');
+  if (state.variant === 'E')
+    ch.innerHTML = '<div class="navbar"><span class="t">Blackbox · 实时</span><span class="btn">本次行程</span></div>';
+  else if (state.variant === 'D')
+    ch.innerHTML = '<div class="tabs"><div class="on">实时</div><div>本次行程</div><div>告警</div></div>' +
+                   '<div class="navbar"><span class="t">实时数据</span><span class="btn">标记异常</span></div>';
+  else if (state.variant === 'A')
+    ch.innerHTML = '<div class="tabs"><div class="on">实时</div><div>告警</div><div>本次行程</div></div>' +
+                   '<div class="navbar"><span class="t">实时数据</span></div>';
+  else
+    ch.innerHTML = '<div class="navbar"><span class="t">Blackbox · 自绘仪表盘</span></div>';
+}
+
+/* E —— Grid 八格。6 个通道 tile + 2 个聚合 tile，用满 8 格上限。 */
+const AGG = [
+  { id:'trip',  cap:'本次行程' },
+  { id:'alert', cap:'告警' },
+];
+function buildE(){
+  const z = document.getElementById('appzone');
+  z.innerHTML = '<div class="cpgrid">' +
+    CHANNELS.map(c =>
+      '<div class="cell"><canvas class="tile" data-tile="'+c.key+'"></canvas>' +
+      '<div class="cap">'+c.label+'</div></div>'
+    ).join('') +
+    AGG.map(a =>
+      '<div class="cell"><canvas class="tile" data-agg="'+a.id+'"></canvas>' +
+      '<div class="cap">'+a.cap+'</div></div>'
+    ).join('') +
+  '</div>';
+}
+
+function buildD(){
+  const z = document.getElementById('appzone');
+  z.innerHTML = '<div class="list">' +
+    CHANNELS.map(c => {
+      const th = c.mode==='plain'
+        ? '<div class="noimg"></div>'
+        : '<canvas class="tile" data-row="'+c.key+'" style="width:76px;height:76px;border-radius:8px"></canvas>';
+      return '<div class="row">'+th+
+        '<div class="txt"><div class="a">'+c.label+'</div><div class="b">'+bandNote(c)+'</div></div>'+
+        '<div class="val" data-v="'+c.key+'">—<small>'+c.unit+'</small></div>'+
+        '<div class="chev">›</div></div>';
+    }).join('') + '</div>';
+}
+const bandNote = c => BANDS[c.key]
+  ? (BANDS[c.key].min===null ? '正常 ≤ '+BANDS[c.key].max+' '+c.unit : '正常 ±'+BANDS[c.key].max+' '+c.unit)
+  : '无可辩护阈值 · 不画带';
+
+function buildA(){
+  const z = document.getElementById('appzone');
+  z.innerHTML = '<div class="info">' +
+    CHANNELS.map(c =>
+      '<div class="row"><span class="k">'+c.label+'</span>'+
+      '<span class="v" data-v="'+c.key+'">—<small>'+c.unit+'</small></span></div>'
+    ).join('') +
+    '<div class="acts"><button>标记异常</button><button>结束行程</button><button>朗读摘要</button></div>' +
+  '</div>';
+}
+
+/* X —— 自绘参考。Driving Task 做不到，放这里量化差距。 */
+function buildX(){
+  const z = document.getElementById('appzone');
+  z.innerHTML =
+    '<div class="banner">Driving Task entitlement 做不到 —— 仅作对比：这需要可自绘 scene（Navigation 类）</div>' +
+    '<div class="freeform" style="padding-top:34px">' +
+      '<div class="strip">' +
+        '<div class="kv"><i>时长</i><b>32 min</b></div>' +
+        '<div class="kv"><i>里程</i><b>18.4 km</b></div>' +
+        '<div class="kv"><i>冷启动</i><b>是</b></div>' +
+        '<div class="kv"><i>采样</i><b>1 892</b></div>' +
+        '<div class="kv"><i>结论</i><b style="color:#30D158">良好</b></div>' +
+        '<div class="kv"><i>告警</i><b>0</b></div>' +
+      '</div>' +
+      CHANNELS.map(c =>
+        '<div class="pane"><div class="hd"><span class="nm">'+c.label+'</span>'+
+        '<span class="vv" data-v="'+c.key+'">—<small>'+c.unit+'</small></span></div>'+
+        '<canvas data-free="'+c.key+'"></canvas></div>'
+      ).join('') +
+    '</div>';
+}
+
+/* ==========================================================
+   每 tick 只更新像素，不重建 DOM
+   ========================================================== */
+function paint(){
+  const v = state.latest;
+  const zone = document.getElementById('appzone');
+
+  zone.querySelectorAll('[data-v]').forEach(el => {
+    const c = CHANNELS.find(x => x.key === el.getAttribute('data-v'));
+    if (!c) return;
+    el.innerHTML = fmt(c, v[c.key]) + '<small>'+c.unit+'</small>';
+    if (state.variant === 'A') el.style.color = statusColor(c.key, v[c.key]);
+  });
+
+  if (state.variant === 'E'){
+    const S = effTile();
+    CHANNELS.forEach(c => {
+      const cv = zone.querySelector('[data-tile="'+c.key+'"]');
+      if (cv) drawTile(cv, c, S);
+    });
+    zone.querySelectorAll('[data-agg]').forEach(cv => drawAggTile(cv, cv.dataset.agg, S));
+  }
+  if (state.variant === 'D'){
+    CHANNELS.forEach(c => {
+      const cv = zone.querySelector('[data-row="'+c.key+'"]');
+      if (cv) drawTile(cv, c, 76);
+    });
+  }
+  if (state.variant === 'X'){
+    CHANNELS.forEach(c => {
+      const cv = zone.querySelector('[data-free="'+c.key+'"]');
+      if (!cv) return;
+      const r = cv.getBoundingClientRect();
+      const W = Math.max(40, Math.round(r.width)), H = Math.max(24, Math.round(r.height));
+      if (cv.width !== W*2){ cv.width = W*2; cv.height = H*2; }
+      const g = cv.getContext('2d');
+      g.setTransform(2,0,0,2,0,0); g.clearRect(0,0,W,H);
+      drawSparkInto(g, c, BANDS[c.key], 0, 2, W, H-4);
+    });
+  }
+  paintZoom();
+}
+
+function drawAggTile(cv, id, S){
+  const dpr = 3;
+  if (cv.width !== S*dpr){ cv.width=S*dpr; cv.height=S*dpr; }
+  cv.style.width=S+'px'; cv.style.height=S+'px';
+  const g = cv.getContext('2d');
+  g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,S,S);
+  g.fillStyle='rgba(255,255,255,.055)'; roundRect(g,0,0,S,S,S*0.09); g.fill();
+
+  const rows = id === 'trip'
+    ? [['时长','32 min'],['里程','18.4 km'],['冷启动','是'],['采样','1 892']]
+    : [['规则告警','0'],['越界通道','0'],['最近','—'],['结论','良好']];
+  const col = id === 'trip' ? '#30D158' : '#30D158';
+  g.fillStyle=col; roundRect(g,0,S*0.14,3,S*0.72,1.5); g.fill();
+
+  const pad = S*0.085;
+  g.textBaseline='middle';
+  rows.forEach((r,i) => {
+    const y = pad + S*0.115 + i*(S-pad*2)/4.2;
+    g.textAlign='left';  g.fillStyle='rgba(255,255,255,.5)'; g.font=F(Math.round(S*0.082));
+    g.fillText(r[0], pad+5, y);
+    g.textAlign='right'; g.fillStyle='#fff'; g.font=F(Math.round(S*0.098),'600');
+    g.fillText(r[1], S-pad, y);
+  });
+}
+
+/* ==========================================================
+   说明栏
+   ========================================================== */
+const COPY = {
+  E: {
+    title:'Grid 八格 · 密集面板',
+    body:'<b>这是 Driving Task 能做到的最密。</b>八格摆满，每格一张自绘 PNG，一格塞六条信息：'+
+         '阈值、状态点、大数值、单位、带正常区间的走势、峰值与余量。'+
+         '<b>通道名不画在格子里</b> —— 系统已经在格子下面渲染 title，重复一遍等于白占一行。'+
+         '六个通道各一格，剩两格放行程概要（4 个字段）和告警（4 个字段）—— <b>正好用满 8 格上限</b>。'+
+         '<br><br>小尺寸自动降级：<b>240px</b> 全给；<b>176px</b> 砍掉峰值余量行；'+
+         '<b>120px</b> 只留数值和走势。这不是偷懒 —— 行车中读不到的信息等于没有。',
+    facts:[
+      ['密度','<span class="good">8 格 × 6 条 ≈ 44 条</span>，一屏不滚动'],
+      ['布局','系统摆位，格间留白你控制不了'],
+      ['上限','<code>CPGridTemplateMaximumItems</code> = 8，多的被忽略'],
+      ['已知坑','<span class="warn">iOS 26 前 Grid 会挤成一行</span>，beta 6 才修'],
+      ['风险','<span class="warn">中</span> · 每秒重推 8 张 PNG，频率待真机验证'],
+    ],
+    zoom:'左边是单格 tile 放大到 200px。<b>真机上它约指甲盖到火柴盒之间</b>，'+
+          '取决于 <code>maximumGridButtonImageSize</code> 的实际返回值。'+
+          '设计前提是：一秒内能读到的只有<b>状态色条、大数字、红色越界段</b>三样，其余是停车后才看的。',
+  },
+  D: {
+    title:'List 混排 · 按通道选呈现',
+    body:'密度不如 Grid，但<b>每行能给更长的说明文字</b>（阈值出处、单位、峰值），'+
+         '而且行数上限 24 —— 通道多起来时是唯一撑得住的。'+
+         '呈现方式按通道性质分：温度和短修给走势图，长修给区间条，车速只给数值。'+
+         '<br><br>能混排的原因很具体：<b><code>CPListItem</code> 的 image 允许为空</b>，Grid 做不到（8 格必须同构）。',
+    facts:[
+      ['密度','6 行 × 3 条 ≈ 18 条，一屏勉强放下'],
+      ['优势','<span class="good">说明文字空间大</span>，适合阈值溯源'],
+      ['上限','24 行 / 50 段 —— 通道扩到十几个也不怕'],
+      ['风险','<span class="warn">中</span> · 同 E，靠动态图片'],
+    ],
+    zoom:'左边是列表行内的 76px 缩略图。<b>比 Grid 格子更小</b> —— 所以行内图只该承担「有没有异常」，'+
+          '具体数值交给右侧文字。',
+  },
+  A: {
+    title:'Information 纯文字',
+    body:'<b>零风险基线。</b>纯 title / detail 文字行，没有任何图片依赖，'+
+         '不受 <code>maximumGridButtonImageSize</code>、PNG 刷新频率、iOS 26 布局 bug 影响。'+
+         '密度最低 —— 六行文字，只有当前值，没有趋势也没有峰值。'+
+         '<br><br>价值在于：<b>这一版一定能跑起来</b>。适合当第一版上车，先验证 CarPlay scene、'+
+         'BLE 后台连接、数据推送这条链路通不通，再往上加图。',
+    facts:[
+      ['密度','<span class="bad">6 条</span> · 最低'],
+      ['风险','<span class="good">最低</span> · 无图片依赖'],
+      ['可视化','<span class="bad">无</span> · Information 行不接受图片'],
+      ['工作量','最小 · 建议作为第一版验证链路'],
+    ],
+    zoom:null,
+  },
+  X: {
+    title:'自绘参考 · Driving Task 做不到',
+    body:'<b>这一版不能实现，放在这里是为了把差距量化。</b>如果 app 能自绘整块屏幕，'+
+         '同一份数据可以这样铺：顶部一条概要带六个字段，下面六个面板各配大幅走势图 —— '+
+         '<b>信息量约是 Grid 版的三倍，且没有系统留白浪费</b>。'+
+         '<br><br>要拿到这块画布只有一条路：<b>CarPlay Navigation entitlement</b>（给可自绘 scene）。'+
+         '但那是发给导航类 app 的，OBD 工具申请下来的可能性很低。'+
+         '<b>现实结论：接受 Grid 八格是天花板。</b>',
+    facts:[
+      ['密度','约 40+ 条 · 且留白可控'],
+      ['可实现','<span class="bad">否</span> · Driving Task 无自绘 scene'],
+      ['前提','Navigation entitlement，导航类专用'],
+      ['用途','拿来对比、以及判断值不值得改产品定位'],
+    ],
+    zoom:null,
+  },
+};
+
+function renderAside(){
+  const c = COPY[state.variant];
+  document.getElementById('asideTag').textContent = '方案 ' + state.variant;
+  document.getElementById('asideTitle').textContent = c.title;
+  document.getElementById('asideBody').innerHTML = c.body;
+  document.getElementById('asideFacts').innerHTML =
+    c.facts.map(f => '<li><span class="lab">'+f[0]+'</span><span>'+f[1]+'</span></li>').join('');
+  const zr = document.getElementById('zoomRow');
+  if (c.zoom){ zr.hidden=false; document.getElementById('zoomLbl').innerHTML = c.zoom; }
+  else zr.hidden = true;
+  renderBudget();
+}
+
+function paintZoom(){
+  const c = COPY[state.variant];
+  if (!c.zoom) return;
+  const zc = document.getElementById('zoomCanvas');
+  drawTile(zc, CHANNELS[0], 200);
+  zc.style.width='200px'; zc.style.height='200px';
+}
+
+/* 像素预算 —— 直接回答「app 到底能画多少」 */
+function renderBudget(){
+  const total = state.w * state.h;
+  let drawable = 0, label = '';
+  if (state.variant === 'E'){ const S = effTile(); drawable = 8*S*S; label = '8 格 × '+S+'²'; }
+  else if (state.variant === 'D'){ drawable = 5 * 76 * 76; label = '5 张行内图 × 76²'; }
+  else if (state.variant === 'A'){ drawable = 0; label = '无图片'; }
+  else { drawable = total; label = '整屏自绘'; }
+  const pct = total ? (drawable/total*100) : 0;
+  document.getElementById('budgetTable').innerHTML =
+    '<tr><td>屏幕总像素</td><td>'+state.w+' × '+state.h+'</td></tr>' +
+    '<tr><td>app 可画</td><td>'+label+'</td></tr>' +
+    '<tr class="tot"><td>占屏比例</td><td>'+pct.toFixed(1)+' %</td></tr>';
+}
+
+/* ==========================================================
+   布局 / tick / 交互
+   ========================================================== */
+function layout(){
+  const cp = document.getElementById('cp');
+  cp.style.width = state.w+'px'; cp.style.height = state.h+'px';
+  cp.dataset.zones = state.zones;
+  const avail = Math.min(document.querySelector('.screenwrap').clientWidth, 1120);
+  const s = Math.min(1, avail / state.w);
+  const sc = document.getElementById('scaler');
+  sc.style.transform = 'scale('+s+')';
+  sc.style.width = (state.w*s)+'px';
+  sc.style.height = (state.h*s)+'px';
+  let cap = state.w+' × '+state.h+' · 显示缩放 '+Math.round(s*100)+'%';
+  if (state.variant === 'E'){
+    const S = effTile();
+    cap += ' · 格子图 '+S+' px';
+    if (S < state.tile) cap += '（选了 '+state.tile+'，这块屏放不下四列，已收敛）';
+  }
+  document.getElementById('cap').textContent = cap;
+  renderBudget();
+}
+
+function rebuild(){
+  renderChrome();
+  ({E:buildE, D:buildD, A:buildA, X:buildX})[state.variant]();
+  renderAside(); layout(); paint();
+}
+
+function tick(){
+  if (!state.running) return;
+  state.t += 1;
+  const s = generateSample(state.t);
+  state.latest = s;
+  CHANNELS.forEach(c => {
+    const a = hist[c.key]; a.push(s[c.key]);
+    if (a.length > HISTORY) a.shift();
+    const m = peakMetric(c.key, s[c.key]);
+    if (m > peak[c.key]) peak[c.key] = m;
+  });
+  const d = new Date();
+  document.getElementById('clock').textContent =
+    d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+  paint();
+}
+
+/* 预热，让走势一打开就有形状 */
+for (let i=0;i<HISTORY;i++){
+  state.t += 1;
+  const s = generateSample(state.t);
+  state.latest = s;
+  CHANNELS.forEach(c => {
+    hist[c.key].push(s[c.key]);
+    const m = peakMetric(c.key, s[c.key]);
+    if (m > peak[c.key]) peak[c.key] = m;
+  });
+}
+
+function wire(id, fn){
+  document.getElementById(id).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...b.parentNode.children].forEach(x => x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    fn(b);
+  });
+}
+wire('segVariant', b => { state.variant = b.dataset.variant; rebuild(); });
+wire('segTile',    b => { state.tile = +b.dataset.t; layout(); paint(); });
+wire('segSize',    b => { state.w = +b.dataset.w; state.h = +b.dataset.h; layout(); paint(); });
+wire('segZones',   b => { state.zones = b.dataset.z; layout(); });
+wire('segRun',     b => { state.running = b.dataset.r === '1'; });
+window.addEventListener('resize', () => { layout(); paint(); });
+
+rebuild();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
