@@ -8,6 +8,7 @@ import { CARPLAY_CHANNELS, bandForChannel, headroom, peakMetric } from '../src/c
 import { buildDashboard, emptyStore, pushSamples, WINDOW_POINTS } from '../src/carplay/dashboardModel';
 import { buildTileLayout, statusColor } from '../src/carplay/tileGeom';
 import { tileToSvg } from '../src/carplay/tileSvg';
+import { pngPixelWidth, scaleForTile } from '../src/carplay/pngMeta';
 import { TOKENS } from '../src/styles/tokens';
 
 const T = TOKENS.dark;
@@ -123,6 +124,29 @@ if (process.argv.includes('--check')) {
     const broken = tags.find((tag) => (tag.match(/"/g)?.length ?? 0) % 2 !== 0);
     ok(broken === undefined, `SVG 标签引号不成对(属性被截断):${broken?.slice(0, 80)}`);
   }
+
+  // 11) PNG 宽度解析 + scale 反算。这是「图被缩两次」那个 bug 的守卫:
+  //     toDataURL 按屏幕倍率出图,不带 scale 时 iOS 会当 px 数就是 pt 数。
+  // 24 字节的 PNG 头(签名 + IHDR 长度 + 'IHDR' + 宽 + 高),216×216 与 72×72。
+  const PNG_216 = 'iVBORw0KGgoAAAANSUhEUgAAANgAAADY';
+  const PNG_72 = 'iVBORw0KGgoAAAANSUhEUgAAAEgAAABI';
+  ok(pngPixelWidth(PNG_216) === 216, `PNG 宽度解析错:${pngPixelWidth(PNG_216)}`);
+  ok(pngPixelWidth(PNG_72) === 72, `PNG 宽度解析错:${pngPixelWidth(PNG_72)}`);
+  ok(pngPixelWidth('not-a-png-at-all-padding-xxxxxxx') === null, '非 PNG 应返回 null');
+  ok(scaleForTile(PNG_216, 72) === 3, '216px 图设计为 72pt 时 scale 应为 3');
+  ok(scaleForTile('garbage', 72) === 1, '解析失败时 scale 应退回 1');
+
+  // 12) 小格子不能浪费竖向空间 —— 用户在 CarPlay Simulator 上实测反馈「留白太多」。
+  //     图区底边必须逼近格子底边,且 tier 1 不画阈值文字(那个尺寸下读不到)。
+  const tiny = buildTileLayout({
+    channel: CARPLAY_CHANNELS[0], samples: store.series.coolant ?? [],
+    value: values.coolant, peak: store.peaks.coolant ?? -Infinity, size: 72,
+  });
+  const rects = tiny.prims.filter((p) => p.k === 'rect') as Array<{ y: number; h: number }>;
+  const bottom = Math.max(...rects.map((r) => r.y + r.h));
+  ok(bottom >= 72 * 0.92, `图区底部只到 ${bottom.toFixed(1)}/72,底部留白过多`);
+  const tinyTexts = tiny.prims.filter((p) => p.k === 'text').map((p) => (p as { text: string }).text);
+  ok(!tinyTexts.some((t4) => t4.startsWith('≤') || t4.startsWith('±')), 'tier 1 不该画阈值文字');
 
   if (fail.length) {
     console.error('FAIL:');

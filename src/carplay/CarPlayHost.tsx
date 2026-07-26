@@ -14,14 +14,21 @@ import { TileRasterizer } from './TileSvgView';
 import type { TileLayout } from './tileGeom';
 
 /**
- * 格子图边长(pt)。真机上限是运行时的 CPGridTemplate.maximumGridButtonImageSize,
- * 库没把它暴露到 JS —— 上车打出实际值后再调这里。
+ * 格子图边长(pt)。上限是运行时的 CPGridTemplate.maximumGridButtonImageSize,
+ * Apple 未公开该值,库也没暴露到 JS。
  *
- * 176 是折中:比它大 iOS 会缩(不糊,只是浪费),比它小则字被放大变糊。
- * 若实测上限远小于 176,把这个数降到 120 —— tileGeom 的 tier 会自动降级成
- * 「只留数值 + 走势」,而不是硬塞四行读不清的小字。
+ * 2026-07-27 CarPlay Simulator(720×480)实测:原来设 176 时格子被系统压到目测
+ * 60-70pt,字小到读不出。**渲染尺寸必须贴近系统上限,而不是往大了画等它缩** ——
+ * 缩放会等比例砍掉字号,而 tier 是按设计尺寸判的,结果就是「按大格子排版、按小
+ * 格子显示」,两头不讨好。
+ *
+ * 现在设 72:落在观察到的上限附近,tier 判定为 1(只有大数值 + 满格走势,不画
+ * 阈值行和峰值行 —— 那两行在这个尺寸下本来就读不到)。配合 gridBridge 里按 PNG
+ * 真实像素宽反算的 scale,原生看到的就是 72pt,不再二次缩放。
+ *
+ * 若以后拿到确切上限:比 72 大就往上调(tier 会自动升级、信息更多),小就往下调。
  */
-const TILE_PT = 176;
+const TILE_PT = 72;
 
 /**
  * 刷新间隔。不用 1 Hz:每次要重画 + 光栅化 8 张 PNG 再过一次 IPC,
@@ -97,7 +104,11 @@ export function CarPlayHost() {
   }, [phase, trip]);
 
   const onPngs = (pngs: (string | null)[]) => {
-    const tiles: GridTile[] = titles.map((title, i) => ({ title, png: pngs[i] ?? null }));
+    const tiles: GridTile[] = titles.map((title, i) => ({
+      title,
+      png: pngs[i] ?? null,
+      sizePt: TILE_PT,
+    }));
     if (!mounted.current) mounted.current = mountDashboard(tiles);
     else updateDashboard(tiles);
   };

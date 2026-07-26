@@ -97,16 +97,19 @@ export function buildTileLayout(input: TileInput): TileLayout {
   prims.push({ k: 'rect', x: 0, y: 0, w: S, h: S, r: r2(S * 0.09), fill: 'rgba(255,255,255,0.055)' });
   prims.push({ k: 'rect', x: 0, y: r2(S * 0.14), w: 3, h: r2(S * 0.72), r: 1.5, fill: col });
 
-  const pad = S * 0.085;
+  // 留白按比例压到最小 —— 真机实测格子只有 60-70pt,0.085 的 padding 在那个尺寸下
+  // 等于把一半可视面积让给了空气(2026-07-27 CarPlay Simulator 反馈)。
+  const pad = S * 0.045;
   let y = pad;
 
   // 1) 阈值 + 状态点。通道名不画 —— 系统已经在格子下面渲染 title,
   //    重复一遍等于白占一行(这是本设计相对「一格一指标」的密度增量)。
+  //    小格子连阈值也不画:6pt 的字读不到,不如把空间全给数值和曲线。
   if (tier >= 2) {
     const fs = Math.round(S * 0.082);
     prims.push({
       k: 'text',
-      x: r2(pad + 5),
+      x: r2(pad + 4),
       y: r2(y + fs),
       text: bandLabel(band),
       fill: T.label2,
@@ -114,22 +117,32 @@ export function buildTileLayout(input: TileInput): TileLayout {
       weight: '400',
       anchor: 'start',
     });
-    prims.push({ k: 'circle', cx: r2(S - pad), cy: r2(y + S * 0.042), r: r2(S * 0.028), fill: col });
-    y += S * 0.135;
+    prims.push({ k: 'circle', cx: r2(S - pad - 2), cy: r2(y + S * 0.042), r: r2(S * 0.028), fill: col });
+    y += S * 0.125;
+  } else {
+    // tier 1 没有阈值行,状态点挪到右上角单独放,不占一整行
+    prims.push({ k: 'circle', cx: r2(S - pad - 2), cy: r2(pad + S * 0.05), r: r2(S * 0.045), fill: col });
   }
 
-  // 2) 大数值 + 单位
-  const vs = Math.round(S * (tier >= 2 ? 0.235 : 0.28));
-  const us = Math.round(S * 0.082);
-  const baseline = r2(y + vs * 0.86);
+  // 2) 大数值 + 单位。
+  //    字号必须按内容自适应,不能只按格子比例定死:「3170」比「73」宽一倍多,
+  //    固定字号下前者会顶穿格子、还会撞上右上角的状态点(72pt 实测)。
+  const us = Math.round(S * (tier >= 2 ? 0.082 : 0.11));
   const txt = fmt(value, c.dec);
+  // tier 1 的状态点在右上角,要给它留出横向位置;tier ≥2 的点在阈值行,不占这里
+  const dotReserve = tier >= 2 ? 0 : S * 0.14;
+  const availW = S - pad * 2 - 4 - dotReserve - estWidth(c.unit, us) - 4;
+  const nominal = S * (tier >= 3 ? 0.26 : tier === 2 ? 0.3 : 0.4);
+  const perEm = Math.max(0.2, estWidth(txt, 1));
+  const vs = Math.max(S * 0.18, Math.min(nominal, availW / perEm));
+  const baseline = r2(y + vs * 0.82);
   prims.push({
     k: 'text',
-    x: r2(pad + 5),
+    x: r2(pad + 4),
     y: baseline,
     text: txt,
     fill: T.label,
-    size: vs,
+    size: r2(vs),
     weight: '600',
     anchor: 'start',
   });
@@ -137,7 +150,7 @@ export function buildTileLayout(input: TileInput): TileLayout {
   // 宽度算:「-4.0」里负号和小数点都窄得多,按 0.6em 一刀切会把单位推出去老远。
   prims.push({
     k: 'text',
-    x: r2(pad + 7 + estWidth(txt, vs)),
+    x: r2(pad + 5 + estWidth(txt, vs)),
     y: baseline,
     text: c.unit,
     fill: T.label2,
@@ -145,12 +158,14 @@ export function buildTileLayout(input: TileInput): TileLayout {
     weight: '400',
     anchor: 'start',
   });
-  y += vs * 1.06;
+  y += vs * 0.9;
 
-  // 3) 图区
-  const chartH = S * (tier >= 3 ? 0.3 : tier === 2 ? 0.34 : 0.4);
-  const chartX = pad + 5;
-  const chartW = S - pad * 2 - 5;
+  // 3) 图区 —— 吃掉所有剩余空间。不再用固定比例:那样底部总留一条用不上的空白,
+  //    而用户要的是「尽可能放大可视化数据」。tier 3 才为峰值/余量行留位置。
+  const footerH = tier >= 3 ? S * 0.11 : 0;
+  const chartX = pad + 3;
+  const chartW = S - pad * 2 - 3;
+  const chartH = Math.max(S * 0.2, S - y - pad - footerH);
   if (c.mode === 'bar') {
     prims.push(...barPrims(value, band, chartX, y, chartW, chartH, col));
   } else {
@@ -161,7 +176,7 @@ export function buildTileLayout(input: TileInput): TileLayout {
   // 4) 峰值 + 余量。只有大格子放得下 —— 读不到的信息等于没有。
   if (tier >= 3) {
     const fs = Math.round(S * 0.072);
-    const fy = r2(S - pad * 0.7);
+    const fy = r2(S - pad);
     prims.push({
       k: 'text',
       x: r2(pad + 5),
@@ -266,17 +281,18 @@ export function buildAggTileLayout(rows: AggRow[], accent: string, S: number): T
   prims.push({ k: 'rect', x: 0, y: 0, w: S, h: S, r: r2(S * 0.09), fill: 'rgba(255,255,255,0.055)' });
   prims.push({ k: 'rect', x: 0, y: r2(S * 0.14), w: 3, h: r2(S * 0.72), r: 1.5, fill: accent });
 
-  const pad = S * 0.085;
+  // 同通道格子:留白压到 0.045,四行铺满整个方块
+  const pad = S * 0.045;
   const n = Math.max(1, rows.length);
-  const step = (S - pad * 2) / (n + 0.2);
-  const ls = Math.round(S * 0.082);
-  const vsz = Math.round(S * 0.098);
+  const step = (S - pad * 2) / n;
+  const ls = Math.round(S * 0.105);
+  const vsz = Math.round(S * 0.125);
   const TONE = { green: T.green, amber: T.amber, red: T.red } as const;
 
   rows.slice(0, 4).forEach((row, i) => {
-    const yc = pad + step * 0.7 + i * step;
+    const yc = pad + step * 0.5 + i * step;
     prims.push({
-      k: 'text', x: r2(pad + 5), y: r2(yc + ls * 0.36), text: row.label,
+      k: 'text', x: r2(pad + 4), y: r2(yc + ls * 0.36), text: row.label,
       fill: T.label2, size: ls, weight: '400', anchor: 'start',
     });
     prims.push({

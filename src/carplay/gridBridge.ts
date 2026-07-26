@@ -13,12 +13,15 @@ import type {
   GridTemplate as GridTemplateClass,
   HybridAutoPlay as HybridAutoPlayType,
 } from '@iternio/react-native-auto-play';
+import { scaleForTile } from './pngMeta';
 import type { TileLayout } from './tileGeom';
 
 /** 每格一份:系统渲染的 title + 已光栅化的 PNG(base64,失败为 null)。 */
 export interface GridTile {
   title: string;
   png: string | null;
+  /** 这张图设计时的 pt 边长。用来反算 image source 的 scale,见 pngMeta。 */
+  sizePt: number;
 }
 
 interface AutoPlayLib {
@@ -50,9 +53,13 @@ export const carPlayLoadError = () => loadError;
  * glyph 是图标字体。asset 的 uri 最终进 RCTConvert 的 uiImage —— data: 应该支持,
  * 但没实测(见 TileSvgView 的风险清单)。
  */
-const toAutoImage = (png: string): AutoImage => ({
+const toAutoImage = (png: string, sizePt: number): AutoImage => ({
   type: 'asset',
-  image: { uri: `data:image/png;base64,${png}` },
+  // scale 必须给。toDataURL 按屏幕倍率出图(176pt 的 Svg 在 3x 上是 528px),
+  // 不带 scale 时 iOS 当它是 528pt 的图,再压到格子上限 ≈60-70pt —— 整张缩近 8 倍,
+  // 字全糊(2026-07-27 CarPlay Simulator 实测)。从 PNG 头读真实像素宽反算,
+  // 不依赖「toDataURL 用了几倍」这个我们问不到的信息。
+  image: { uri: `data:image/png;base64,${png}`, scale: scaleForTile(png, sizePt) },
 });
 
 /** 已建立的根模板。null = 车没连 / 还没建。 */
@@ -66,7 +73,7 @@ const buildButtons = (tiles: GridTile[]): Array<GridButton<GridTemplateClass>> =
     .map((t) => ({
       // AutoText 是 { text } 对象,不是裸字符串(库支持 {distance}/{duration} 占位符)
       title: { text: t.title },
-      image: toAutoImage(t.png),
+      image: toAutoImage(t.png, t.sizePt),
       // CPGridButton 必须给 handler。Driving Task 要求界面浅,点了不跳层级 —— no-op。
       onPress: () => {},
     }));
