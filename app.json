@@ -48,7 +48,8 @@
         {
           "widgets": []
         }
-      ]
+      ],
+      "./plugins/withCarPlayDrivingTask"
     ],
     "extra": {
       "eas": {
