@@ -8,8 +8,24 @@
 // provisioning profile。类型检查过不代表能跑。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveSession } from '../ble/LiveSession';
-import { buildDashboard, emptyStore, pushSamples, type TripSummary } from './dashboardModel';
-import { mountDashboard, onCarConnection, unmountDashboard, updateDashboard, type GridTile } from './gridBridge';
+import {
+  buildCardDashboard,
+  buildDashboard,
+  emptyStore,
+  pushSamples,
+  type TripSummary,
+} from './dashboardModel';
+import {
+  mountCards,
+  mountDashboard,
+  onCarConnection,
+  unmountDashboard,
+  isCarConnected,
+  updateCards,
+  updateDashboard,
+  type CardTile,
+  type GridTile,
+} from './gridBridge';
 import { TileRasterizer } from './TileSvgView';
 import type { TileLayout } from './tileGeom';
 
@@ -37,18 +53,44 @@ const TILE_PT = 72;
  */
 const REFRESH_MS = 2_000;
 
+/**
+ * 'grid'  = CPGridTemplate 八宫格。格间留白由系统排,app 改不了 —— 720×480 上
+ *           约 60pt 的小方块散在大片空白里,这是它的天花板。
+ * 'cards' = iOS 26 的 CPListImageRowItem + 卡片元素。图 + 系统渲染的
+ *           title/subtitle,一行多卡、支持多行。系统文字不受图片尺寸上限约束,
+ *           所以数值终于能大到看得清。
+ *
+ * ⚠️ 'cards' 依赖 node_modules 里的一次性探针(ios/BlackboxProbe.swift)——
+ * 库没暴露这套 API。探针会被 prebuild/pod install 冲掉。
+ */
+const LAYOUT: 'grid' | 'cards' = 'cards';
+
+/**
+ * 卡片图尺寸(pt)。真值是 CPListImageRowItemCardElement.maximumImageSize,
+ * 探针会 NSLog 出来 —— 拿到后改这里。在那之前用一个偏宽的估值:
+ * 走势图是横向的,卡片也多半横长。
+ */
+// 卡片实测是竖长的(2026-07-27 模拟器截图),不是我原先猜的横长。
+// 探针的诊断卡会把 CPListImageRowItemCardElement.maximumImageSize 真值
+// 显示在车机上,拿到后改这两个数。
+const CARD_W = 120;
+const CARD_H = 150;
+
 export function CarPlayHost() {
   const { phase, values, elapsedSec, distanceKm } = useLiveSession();
   const store = useRef(emptyStore());
   const [layouts, setLayouts] = useState<TileLayout[]>([]);
   const [titles, setTitles] = useState<string[]>([]);
+  const [subtitles, setSubtitles] = useState<string[]>([]);
   const revision = useRef(0);
   const [rev, setRev] = useState(0);
   const connected = useRef(false);
   const mounted = useRef(false);
 
-  // 车机连接状态
+  // 车机连接状态。先读一次当前值 —— didConnect 只在连接发生那一刻触发,
+  // app 启动时车机已连着的话事件早过去了。
   useEffect(() => {
+    connected.current = isCarConnected();
     const off = onCarConnection(
       () => {
         connected.current = true;
@@ -88,11 +130,26 @@ export function CarPlayHost() {
   useEffect(() => {
     if (phase !== 'streaming') return;
     const tick = () => {
+      // 每次都问一遍而不是只信事件:事件可能在监听注册前就发生过
+      if (!connected.current) connected.current = isCarConnected();
       if (!connected.current) return;
       pushSamples(store.current, values, Date.now());
-      const tiles = buildDashboard({ values, store: store.current, trip, size: TILE_PT });
-      setLayouts(tiles.map((t) => t.layout));
-      setTitles(tiles.map((t) => t.title));
+      if (LAYOUT === 'cards') {
+        const cards = buildCardDashboard({
+          values,
+          store: store.current,
+          w: CARD_W,
+          h: CARD_H,
+        });
+        setLayouts(cards.map((c) => c.layout));
+        setTitles(cards.map((c) => c.title));
+        setSubtitles(cards.map((c) => c.subtitle));
+      } else {
+        const tiles = buildDashboard({ values, store: store.current, trip, size: TILE_PT });
+        setLayouts(tiles.map((t) => t.layout));
+        setTitles(tiles.map((t) => t.title));
+        setSubtitles([]);
+      }
       revision.current += 1;
       setRev(revision.current);
     };
@@ -104,6 +161,17 @@ export function CarPlayHost() {
   }, [phase, trip]);
 
   const onPngs = (pngs: (string | null)[]) => {
+    if (LAYOUT === 'cards') {
+      const cards: CardTile[] = titles.map((title, i) => ({
+        title,
+        subtitle: subtitles[i] ?? '',
+        png: pngs[i] ?? null,
+        widthPt: CARD_W,
+      }));
+      if (!mounted.current) mounted.current = mountCards(cards);
+      else updateCards(cards);
+      return;
+    }
     const tiles: GridTile[] = titles.map((title, i) => ({
       title,
       png: pngs[i] ?? null,

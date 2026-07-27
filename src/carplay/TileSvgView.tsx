@@ -132,8 +132,8 @@ export function TileRasterizer({ layouts, onPngs, revision }: TileRasterizerProp
           ref={(r: unknown) => {
             refs.current[i] = r as Rasterizable | null;
           }}
-          width={l.size}
-          height={l.size}
+          width={l.w}
+          height={l.h}
         >
           <TilePrims prims={l.prims} />
         </Svg>

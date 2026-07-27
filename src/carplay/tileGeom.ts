@@ -32,7 +32,10 @@ export type TilePrim =
     };
 
 export interface TileLayout {
+  /** 方形格子的边长。非方形(卡片)时等于 w,只为兼容旧调用点保留。 */
   size: number;
+  w: number;
+  h: number;
   /** 3 = 阈值行 + 数值 + 图 + 峰值余量行;2 = 去掉峰值余量行;1 = 只留数值 + 图。 */
   tier: 1 | 2 | 3;
   prims: TilePrim[];
@@ -200,7 +203,100 @@ export function buildTileLayout(input: TileInput): TileLayout {
     });
   }
 
-  return { size: S, tier, prims };
+  return { size: S, w: S, h: S, tier, prims };
+}
+
+/**
+ * 卡片用的图 —— 只画曲线,不画数值和单位。
+ *
+ * 与方形格子的关键分工差异:CPListImageRowItemCardElement 自带系统渲染的
+ * title / subtitle,系统文字**不受图片尺寸上限约束**,比我在 60pt 图里画的字
+ * 大得多也清晰得多。所以数值交给 subtitle,图片专心做它唯一不可替代的事:
+ * 画走势。全出血,padding 只留 2px 免得曲线贴边被圆角切掉。
+ */
+export function buildCardChart(input: {
+  channel: CarPlayChannel;
+  samples: SeriesPoint[];
+  value: number | undefined;
+  w: number;
+  h: number;
+}): TileLayout {
+  const { channel: c, samples, value, w, h } = input;
+  const band = bandForChannel(c);
+  const col = statusColor(value, band);
+  const prims: TilePrim[] = [];
+  const p = 2;
+
+  prims.push({ k: 'rect', x: 0, y: 0, w, h, fill: 'rgba(255,255,255,0.05)' });
+
+  // showsImageFullHeight = true 时系统把 title/subtitle 压在图片底部。
+  // 所以底部这块必须留给文字 —— 曲线画到底会和字叠在一起,两个都读不清。
+  const TEXT_ZONE = 0.38;
+  const chartH = h * (1 - TEXT_ZONE) - p;
+  if (c.mode === 'bar') {
+    prims.push(...barPrims(value, band, p, p, w - p * 2, chartH, col));
+  } else {
+    prims.push(...sparkPrimsRect(samples, band, p, p, w - p * 2, chartH));
+  }
+  // 文字区压暗,保证系统白字在任何曲线上都读得清
+  prims.push({
+    k: 'rect',
+    x: 0,
+    y: r2(h * (1 - TEXT_ZONE)),
+    w,
+    h: r2(h * TEXT_ZONE),
+    fill: 'rgba(0,0,0,0.55)',
+  });
+  // 状态色画成底边整条 —— 卡片上没有别的地方放状态点,而颜色是行车中
+  // 一秒内唯一读得到的信息,不能省。
+  prims.push({ k: 'rect', x: 0, y: r2(h - 3), w, h: 3, fill: col });
+
+  return { size: w, w, h, tier: 1, prims };
+}
+
+/** 任意矩形区域内画走势(不假设外框是正方形)。 */
+function sparkPrimsRect(
+  samples: SeriesPoint[],
+  band: ChannelBand | undefined,
+  x: number,
+  yTop: number,
+  w: number,
+  h: number,
+): TilePrim[] {
+  const out: TilePrim[] = [];
+  const L = buildTripChartLayout(samples, band, {
+    w: x + w,
+    h: yTop + h,
+    padL: x,
+    padR: 0,
+    padT: yTop,
+    padB: 0,
+    headroom: 0.06,
+    includeBandInAxis: false,
+  });
+  if (!L) {
+    out.push({ k: 'rect', x: r2(x), y: r2(yTop), w: r2(w), h: r2(h), fill: 'rgba(255,255,255,0.04)' });
+    return out;
+  }
+  if (L.normalRect) {
+    const n = L.normalRect;
+    out.push({ k: 'rect', x: n.x, y: n.y, w: n.width, h: n.height, fill: 'rgba(48,209,88,0.15)' });
+  }
+  const sw = Math.max(1.6, h * 0.05);
+  out.push({ k: 'poly', points: L.linePoints, stroke: 'rgba(255,255,255,0.9)', sw });
+  for (const run of L.outRuns) {
+    if (run.points) out.push({ k: 'poly', points: run.points, stroke: T.red, sw });
+    else if (run.dot) out.push({ k: 'circle', cx: run.dot.cx, cy: run.dot.cy, r: r2(sw), fill: T.red });
+  }
+  const lastV = samples[samples.length - 1].v;
+  out.push({
+    k: 'circle',
+    cx: L.lastDot.cx,
+    cy: L.lastDot.cy,
+    r: r2(Math.max(1.8, h * 0.07)),
+    fill: band && isOutOfBand(lastV, band) ? T.red : T.label,
+  });
+  return out;
 }
 
 /**
@@ -301,7 +397,7 @@ export function buildAggTileLayout(rows: AggRow[], accent: string, S: number): T
     });
   });
 
-  return { size: S, tier: 3, prims };
+  return { size: S, w: S, h: S, tier: 3, prims };
 }
 
 /** 区间条:回答「离阈值边还有多远」。量程按阈值外扩 50%,保证越界也画得进去。 */

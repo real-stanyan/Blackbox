@@ -8,7 +8,13 @@ import { TOKENS, VERDICT, type Verdict } from '../styles/tokens';
 import { isOutOfBand } from '../analysis/bands';
 import type { SeriesPoint } from '../data/types';
 import { CARPLAY_CHANNELS, bandForChannel, peakMetric } from './channels';
-import { buildAggTileLayout, buildTileLayout, type AggRow, type TileLayout } from './tileGeom';
+import {
+  buildAggTileLayout,
+  buildCardChart,
+  buildTileLayout,
+  type AggRow,
+  type TileLayout,
+} from './tileGeom';
 
 const T = TOKENS.dark;
 
@@ -66,6 +72,43 @@ export interface DashboardInput {
   store: RollingStore;
   trip: TripSummary;
   size: number;
+}
+
+/** 卡片版:图只画曲线,数值走系统渲染的 title/subtitle。 */
+export interface DashboardCard {
+  /** 卡片主标题 —— 通道名。系统文字,不受图片尺寸上限约束。 */
+  title: string;
+  /** 副标题 —— 当前值 + 单位 + 阈值。同样是系统文字。 */
+  subtitle: string;
+  layout: TileLayout;
+}
+
+export function buildCardDashboard(input: {
+  values: Record<string, number>;
+  store: RollingStore;
+  w: number;
+  h: number;
+}): DashboardCard[] {
+  const { values, store, w, h } = input;
+  return CARPLAY_CHANNELS.map((c) => {
+    const v = values[c.key];
+    const band = bandForChannel(c);
+    const shown = v === undefined ? '—' : v.toFixed(c.dec);
+    // 副标题只放「值 + 单位」。卡片很窄,再挂阈值会被系统省略号截掉
+    // (实测「31 °C · 上限 115」显示成「31 °C ·…」,等于白写)。
+    // 阈值信息改由图里的绿带表达 —— 那是图不可替代的部分。
+    return {
+      title: c.label,
+      subtitle: `${shown} ${c.unit}`,
+      layout: buildCardChart({
+        channel: c,
+        samples: store.series[c.key] ?? [],
+        value: v,
+        w,
+        h,
+      }),
+    };
+  });
 }
 
 /** 越界通道数 —— 告警格子用。只数有可辩护阈值的通道。 */

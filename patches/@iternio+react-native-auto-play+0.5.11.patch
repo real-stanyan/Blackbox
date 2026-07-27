@@ -1,0 +1,146 @@
+--- /dev/null
++++ b/node_modules/@iternio/react-native-auto-play/ios/BlackboxProbe.swift
+@@ -0,0 +1,123 @@
++//
++//  BlackboxProbe.swift
++//  一次性可行性探针 —— 不是产品代码。
++//
++//  目的:验证两件在文档里查不到、只能上机问的事
++//    1. Driving Task entitlement 下 CPListImageRowItem + 卡片元素能不能用
++//       (这套 API 历史上是给音频类 app 的,可能被系统拒)
++//    2. 三个图片尺寸上限的真实值 —— Apple 未公开,库也没暴露到 JS,
++//       之前只能靠截图目测反推
++//
++//  这个文件写在 node_modules 里,prebuild/pod install 会重新拉取从而丢失。
++//  验证通过后要正式化:fork 库或走 patch-package。
++//
++import CarPlay
++
++enum BlackboxProbe {
++    /// 只打一次,免得每 2 秒刷新时刷屏。
++    private static var logged = false
++
++    @MainActor
++    static func logSizes() {
++        if logged { return }
++        logged = true
++        NSLog(
++            "BLACKBOX_PROBE CPListItem.maximumImageSize=%@",
++            NSCoder.string(for: CPListItem.maximumImageSize))
++        if #available(iOS 26.0, *) {
++            // maximumGridButtonImageSize 也是 iOS 26 才有的 —— 一起放进守卫
++            NSLog(
++                "BLACKBOX_PROBE maximumGridButtonImageSize=%@",
++                NSCoder.string(for: CPGridTemplate.maximumGridButtonImageSize))
++            NSLog(
++                "BLACKBOX_PROBE CardElement.maximumImageSize=%@",
++                NSCoder.string(for: CPListImageRowItemCardElement.maximumImageSize))
++            NSLog(
++                "BLACKBOX_PROBE GridElement.maximumImageSize=%@",
++                NSCoder.string(for: CPListImageRowItemGridElement.maximumImageSize))
++            NSLog(
++                "BLACKBOX_PROBE RowElement.maximumImageSize=%@",
++                NSCoder.string(for: CPListImageRowItemRowElement.maximumImageSize))
++        }
++        if let tc = SceneStore.getRootTraitCollection() {
++            NSLog("BLACKBOX_PROBE carScreenScale=%f", tc.displayScale)
++        }
++    }
++
++    /// 一张纯色小图,给诊断卡当占位。
++    private static func solidImage(_ size: CGSize) -> UIImage {
++        UIGraphicsImageRenderer(size: size).image { ctx in
++            UIColor(white: 0.16, alpha: 1).setFill()
++            ctx.fill(CGRect(origin: .zero, size: size))
++        }
++    }
++
++    /// 把三个尺寸上限写进卡片的 title/subtitle —— 这是唯一能稳定读到的通道。
++    @available(iOS 26.0, *)
++    @MainActor
++    private static func diagnosticCard() -> CPListImageRowItemCardElement? {
++        let card = CPListImageRowItemCardElement.maximumImageSize
++        let grid = CPGridTemplate.maximumGridButtonImageSize
++        let listItem = CPListItem.maximumImageSize
++        let scale = SceneStore.getRootTraitCollection()?.displayScale ?? 0
++        let title = String(
++            format: "card %.0fx%.0f", card.width, card.height)
++        let subtitle = String(
++            format: "grid %.0f · list %.0f · @%.0fx",
++            grid.width, listItem.width, scale)
++        return CPListImageRowItemCardElement(
++            image: solidImage(card.width > 0 ? card : CGSize(width: 120, height: 120)),
++            showsImageFullHeight: true,
++            title: title,
++            subtitle: subtitle,
++            tintColor: nil
++        )
++    }
++
++    /// section.title == "__CARDS__" 时,把该 section 的 items 转成一行卡片。
++    /// 返回 nil = 没有标记 section,走库原本的路径。
++    @available(iOS 26.0, *)
++    @MainActor
++    static func cardSections(
++        sections: [NitroSection]?,
++        traitCollection: UITraitCollection
++    ) -> [CPListSection]? {
++        guard let sections, sections.contains(where: { $0.title == "__CARDS__" }) else {
++            return nil
++        }
++
++        var out: [CPListSection] = []
++        for section in sections {
++            guard section.title == "__CARDS__" else { continue }
++
++            let cards: [CPListImageRowItemCardElement] = section.items.compactMap { item in
++                guard
++                    let image = Parser.parseNitroImage(
++                        image: item.image, traitCollection: traitCollection)
++                else { return nil }
++                return CPListImageRowItemCardElement(
++                    image: image,
++                    showsImageFullHeight: true,
++                    title: Parser.parseText(text: item.title),
++                    subtitle: Parser.parseText(text: item.detailedText),
++                    tintColor: nil
++                )
++            }
++            NSLog("BLACKBOX_PROBE built %d card elements", cards.count)
++            guard !cards.isEmpty else { continue }
++
++            // 诊断卡:把尺寸真值画进界面。NSLog 在模拟器上捞不出来(log show 查不到、
++            // session 还会掉),而这张卡在截图里一定看得见。探针专用,验完删。
++            var all = cards
++            if let diag = diagnosticCard() { all.append(diag) }
++
++            let row = CPListImageRowItem(
++                text: nil,
++                cardElements: all,
++                allowsMultipleLines: true
++            )
++            out.append(CPListSection(items: [row]))
++        }
++        return out.isEmpty ? nil : out
++    }
++}
+--- a/node_modules/@iternio/react-native-auto-play/ios/templates/ListTemplate.swift
++++ b/node_modules/@iternio/react-native-auto-play/ios/templates/ListTemplate.swift
+@@ -46,6 +46,17 @@
+             return
+         }
+ 
++        // ===== BLACKBOX 一次性探针(见 ios/BlackboxProbe.swift)。验完要移除。=====
++        BlackboxProbe.logSizes()
++        if #available(iOS 26.0, *),
++            let cards = BlackboxProbe.cardSections(
++                sections: sections, traitCollection: traitCollection)
++        {
++            template.updateSections(cards)
++            return
++        }
++        // ===== 探针结束 =====
++
+         template.updateSections(
+             Parser.parseSections(
+                 sections: sections,
