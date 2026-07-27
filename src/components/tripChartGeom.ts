@@ -49,6 +49,15 @@ export interface LayoutOpts {
   padB?: number;
   /** y 轴上下各留的余量比例。 */
   headroom?: number;
+  /**
+   * 是否把阈值强行拉进 y 轴视野。默认 true —— 行程大图上必须这样,
+   * 否则「正常带」画不出来、读者判断不了离限值多远。
+   *
+   * CarPlay 格子图传 false:格子只有 120–240px,把 ≤115 拉进视野会让 25–90 的
+   * 数据挤成底部一条线,曲线形状读不出来。而格子里阈值已经用文字(`≤ 115`)和
+   * 余量(`余 42`)表达了,图的职责只是近况形状 —— 越界仍会转红(判据是数值不是轴)。
+   */
+  includeBandInAxis?: boolean;
 }
 
 interface AugPt extends SeriesPoint {
@@ -108,7 +117,12 @@ export function buildTripChartLayout(
   opts: LayoutOpts = {},
 ): TripChartLayout | null {
   if (points.length < 2) return null;
-  const { w = 320, h = 118, padL = 4, padR = 40, padT = 8, padB = 15, headroom = 0.08 } = opts;
+  const {
+    w = 320, h = 118, padL = 4, padR = 40, padT = 8, padB = 15, headroom = 0.08,
+    includeBandInAxis = true,
+  } = opts;
+  /** 只在 includeBandInAxis 时参与轴计算的阈值。 */
+  const axisBand = includeBandInAxis ? band : undefined;
 
   const plot: ChartRect = { x: padL, y: padT, width: w - padL - padR, height: h - padT - padB };
 
@@ -116,15 +130,15 @@ export function buildTripChartLayout(
   let lo = Math.min(...values);
   let hi = Math.max(...values);
   // 阈值必须进视野,否则「正常带」画不出来,读者也判断不了离限值多远。
-  if (band?.min != null) lo = Math.min(lo, band.min);
-  if (band?.max != null) hi = Math.max(hi, band.max);
+  if (axisBand?.min != null) lo = Math.min(lo, axisBand.min);
+  if (axisBand?.max != null) hi = Math.max(hi, axisBand.max);
   const raw = hi - lo || Math.max(1, Math.abs(hi) * 0.1);
   lo -= raw * headroom;
   hi += raw * headroom;
   // 阈值那一侧额外留白:否则数据没越界时(如水温峰值 108 < 上限 115)红色异常区
   // 只剩一两像素,「哪里算异常」根本看不出来。
-  if (band?.max != null) hi = Math.max(hi, band.max + raw * EDGE_HEADROOM);
-  if (band?.min != null) lo = Math.min(lo, band.min - raw * EDGE_HEADROOM);
+  if (axisBand?.max != null) hi = Math.max(hi, axisBand.max + raw * EDGE_HEADROOM);
+  if (axisBand?.min != null) lo = Math.min(lo, axisBand.min - raw * EDGE_HEADROOM);
   const span = hi - lo;
 
   const t0 = points[0].t;

@@ -14,18 +14,12 @@ import { notifyConnected, notifyDisconnected } from '../notifications/notify';
 import { runAnalysis } from '../analysis/runAnalysis';
 import { setVehicle } from '../data/settingsStore';
 import { useObdActivity } from '../widgets/useObdActivity';
+// OBD PID key(src/obd/pids.ts)→ UI tile key(livePidMeta.ts)。
+// 表本身搬到 data/channelKeys.ts —— CarPlay 仪表盘要反查 bands.ts 的阈值,
+// 两处各抄一份就成了两套真相(ADR-0002 同源原则)。
+import { PID_TO_UI as OBD_TO_UI } from '../data/channelKeys';
 
 export type LivePhase = 'idle' | 'scanning' | 'connecting' | 'streaming' | 'error';
-
-// OBD PID key(src/obd/pids.ts)→ UI tile key(livePidMeta.ts)
-const OBD_TO_UI: Record<string, string> = {
-  rpm: 'rpm',
-  speed: 'speed',
-  coolant_temp: 'coolant',
-  oil_temp: 'oil',
-  stft_b1: 'stft',
-  ltft_b1: 'ltft',
-};
 
 const ADAPTER_NAME = /OBD|CX|LINK|STN|VLINK/i;
 const SCAN_TIMEOUT_MS = 30_000;

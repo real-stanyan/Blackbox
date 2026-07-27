@@ -1,6 +1,7 @@
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { LiveSessionProvider } from './src/ble/LiveSession';
 import { DemoSessionProvider } from './src/ble/DemoSession';
+import { CarPlayHost } from './src/carplay/CarPlayHost';
 
 // Demo 模式(EXPO_PUBLIC_DEMO_MODE=1):跳过 BLE,用模拟数据喂 context。
 // babel 编译时内联 env var,无运行时开销。.env.local 已 gitignore,production 不带。
@@ -15,6 +16,10 @@ export default function App() {
   return (
     <SessionProvider>
       <RootNavigator />
+      {/* CarPlay 仪表盘的驱动器。必须挂在 app 树里(要 LiveSession context,而且
+          格子图靠 react-native-svg 的 toDataURL 光栅化 —— 得有真实挂载的视图)。
+          自身只渲染屏幕外的 Svg,手机界面上看不见;CarPlay 不可用时是 no-op。 */}
+      <CarPlayHost />
     </SessionProvider>
   );
 }
