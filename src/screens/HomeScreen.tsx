@@ -102,7 +102,8 @@ export function HomeScreen() {
         {pids.map((p) => {
           const has = driving && p.drive != null;
           const isInt = p.key === 'rpm' || p.key === 'speed';
-          const v: string | number = has ? (isInt ? Math.round(p.drive!) : p.drive!) : '—';
+          // 浮点通道(水温/机油温/燃油修正)裁到两位小数 — 原始值有十几位尾数,会撑爆卡片
+          const v: string | number = has ? (isInt ? Math.round(p.drive!) : p.drive!.toFixed(2)) : '—';
           const col = p.key === 'coolant' ? t.blue : t.label;
           const note = p.key === 'oil' && !has ? p.note : undefined;
           return (
